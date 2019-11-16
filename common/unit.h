@@ -282,6 +282,7 @@ enum unit_airlift_result
 bool is_successful_airlift_result(enum unit_airlift_result result);
 bool unit_can_airlift_to(const struct unit *punit, const struct city *pcity);
 bool unit_has_orders(const struct unit *punit);
+bool unit_has_f_activity(const struct unit *punit);
 
 bool could_unit_load(const struct unit *pcargo, const struct unit *ptrans);
 bool can_unit_load(const struct unit *punit, const struct unit *ptrans);

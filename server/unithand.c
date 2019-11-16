@@ -3260,6 +3260,19 @@ static void unit_activity_dependencies(struct unit *punit,
     /* do nothing */
     break;
   }
+  /* Hide the unit if we show it in transport */
+  switch (old_activity) {
+  case ACTIVITY_FORTIFIED:
+  case ACTIVITY_FORTIFYING:
+    if (game.server.see_fortified_in_transports
+        && unit_transported(punit)
+        && punit->activity != ACTIVITY_FORTIFYING
+        && punit->activity != ACTIVITY_FORTIFIED) {
+      unit_loaded_hide(punit);
+    }
+  default:
+    break;
+  }
 }
 
 /**************************************************************************

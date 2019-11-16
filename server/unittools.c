@@ -94,6 +94,7 @@ struct unit_move_data {
   bv_player can_see_unit;
   bv_player can_see_move;
   struct vision *old_vision;
+  bool f_activity;
 };
 
 #define SPECLIST_TAG unit_move_data
@@ -424,6 +425,8 @@ void player_restore_units(struct player *pplayer)
         carrier = transporter_for_unit(punit);
         if (carrier) {
           unit_transport_load_tp_status(punit, carrier, FALSE);
+          /* Unit may go out of sight now */
+          unit_loaded_hide(punit);
         } else {
           bool alive = true;
 
@@ -473,6 +476,7 @@ void player_restore_units(struct player *pplayer)
                   carrier = transporter_for_unit(punit);
                   if (carrier) {
                     unit_transport_load_tp_status(punit, carrier, FALSE);
+                    unit_loaded_hide(punit);
                   }
                 }
 
@@ -1663,7 +1667,9 @@ static void server_remove_unit_full(struct unit *punit, bool transported,
   /* Send to onlookers. */
   players_iterate(aplayer) {
     if (can_player_see_unit_at(aplayer, punit, unit_tile(punit),
-                               transported)) {
+                               transported
+                               && !(game.server.see_fortified_in_transports
+                                    && unit_has_f_activity(punit)))) {
       lsend_packet_unit_remove(aplayer->connections, &packet);
     }
   } players_iterate_end;
@@ -2426,7 +2432,8 @@ void package_short_unit(struct unit *punit,
 
   /* Transported_by information is sent to the client even for units that
    * aren't fully known.  Note that for non-allied players, any transported
-   * unit can't be seen at all.  For allied players we have to know if
+   * unit can't be seen at all (except if fortifying on certain setting).
+   * For allied players we have to know if
    * transporters have room in them so that we can load units properly. */
   if (!unit_transported(punit)) {
     packet->transported = FALSE;
@@ -2489,6 +2496,52 @@ void send_unit_info(struct conn_list *dest, struct unit *punit)
       if (pdata != NULL) {
         BV_SET(pdata->can_see_unit, player_index(pplayer));
       }
+    }
+  } conn_list_iterate_end;
+}
+
+/****************************************************************************
+  send the unit to the players who need the info or informs that the unit
+  went out of sight as loaded into the transport.
+****************************************************************************/
+void send_unit_info_loaded(struct conn_list *dest, struct unit *punit)
+{
+  const struct player *powner;
+  struct packet_unit_info info;
+  struct packet_unit_short_info sinfo;
+  struct unit_move_data *pdata;
+
+  if (dest == NULL) {
+    dest = game.est_connections;
+  }
+  CHECK_UNIT(punit);
+
+  powner = unit_owner(punit);
+  package_unit(punit, &info);
+  package_short_unit(punit, &sinfo, UNIT_INFO_IDENTITY, 0);
+  pdata = punit->server.moving;
+
+  conn_list_iterate(dest, pconn) {
+    struct player *pplayer = conn_get_player(pconn);
+
+    /* Be careful to consider all cases where pplayer is NULL... */
+    if (pplayer == NULL) {
+      if (pconn->observer) {
+        send_packet_unit_info(pconn, &info);
+      }
+    } else if (pplayer == powner) {
+      send_packet_unit_info(pconn, &info);
+      if (pdata != NULL) {
+        BV_SET(pdata->can_see_unit, player_index(pplayer));
+      }
+    } else if (can_player_see_unit(pplayer, punit)) {
+      send_packet_unit_short_info(pconn, &sinfo, FALSE);
+      if (pdata != NULL) {
+        BV_SET(pdata->can_see_unit, player_index(pplayer));
+      }
+    } else if (can_player_see_unit_at(pplayer, punit,
+                                      unit_tile(punit), FALSE)) {
+      unit_goes_out_of_sight(pplayer, punit);
     }
   } conn_list_iterate_end;
 }
@@ -2946,12 +2999,42 @@ void unit_transport_load_send(struct unit *punit, struct unit *ptrans)
 
   unit_transport_load(punit, ptrans, FALSE);
 
-  send_unit_info(NULL, punit);
+  send_unit_info_loaded(NULL, punit);
   send_unit_info(NULL, ptrans);
+}
+
+/*******************************************************************//*******
+  Sends "out of sight" package to everybody whom needed.
+  Does not update unit info to ones still seeing it (to be done elsewhere).
+****************************************************************************/
+void unit_loaded_hide(struct unit *punit)
+{
+  struct player *pplayer = unit_owner(punit);
+  struct tile *ptile = unit_tile(punit);
+
+  switch (punit->activity) {
+  /* Your ruleset is weird if your planes fortify but why not */
+  case ACTIVITY_FORTIFIED:
+  case ACTIVITY_FORTIFYING:
+    if (game.server.see_fortified_in_transports) {
+      /* everybody involved still see the unit */
+      break;
+    }
+  default:
+    conn_list_iterate(game.est_connections, pconn) {
+      struct player *aplayer = conn_get_player(pconn);
+      
+      if (aplayer && !pplayers_allied(pplayer, aplayer)
+          && can_player_see_unit_at(aplayer, punit, ptile, FALSE)) {
+        unit_goes_out_of_sight(aplayer, punit);
+      }
+    } conn_list_iterate_end;
+  }
 }
 
 /****************************************************************************
   Load unit to transport, send transport's loaded status to everyone.
+  Assumes that the cargo's info is sent elsewhere.
 ****************************************************************************/
 static void unit_transport_load_tp_status(struct unit *punit,
                                           struct unit *ptrans,
@@ -3424,6 +3507,9 @@ static struct unit_move_data *unit_move_data(struct unit *punit,
     pdata = fc_malloc(sizeof(*pdata));
     pdata->ref_count = 1;
     pdata->punit = punit;
+    if (game.server.see_fortified_in_transports) {
+      pdata->f_activity = unit_has_f_activity(punit);
+    }
     punit->server.moving = pdata;
     BV_CLR_ALL(pdata->can_see_unit);
   }
@@ -3620,7 +3706,7 @@ bool unit_move(struct unit *punit, struct tile *pdesttile, int move_cost,
        * above. */
       continue;
     }
-
+  
     players_iterate(oplayer) {
       if ((adj
            && can_player_see_unit_at(oplayer, pmove_data->punit, psrctile,
@@ -3629,11 +3715,14 @@ bool unit_move(struct unit *punit, struct tile *pdesttile, int move_cost,
                                     pmove_data != pdata)) {
         BV_SET(pmove_data->can_see_unit, player_index(oplayer));
         BV_SET(pmove_data->can_see_move, player_index(oplayer));
-      }
-      if (can_player_see_unit_at(oplayer, pmove_data->punit, psrctile,
-                                 pmove_data != pdata)) {
+      } else if (can_player_see_unit_at(oplayer, pmove_data->punit, psrctile,
+                                        pmove_data != pdata
+                                        && !pmove_data->f_activity)) {
         /* The unit was seen with its source tile even if it was
          * teleported. */
+        /* Fortified cargo will not be fortified any more and thus
+         * will not be seen to non-allied players if it was.
+         * It jumps in a boat, and one doesn't see it moving later. */
         BV_SET(pmove_data->can_see_unit, player_index(oplayer));
       }
     } players_iterate_end;

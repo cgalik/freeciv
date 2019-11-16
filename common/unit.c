@@ -199,6 +199,20 @@ bool unit_has_orders(const struct unit *punit)
   return punit->has_orders;
 }
 
+/*********************************************************************//*****
+  Return TRUE iff the unit is either fortified or fortifying now
+****************************************************************************/
+bool unit_has_f_activity(const struct unit *punit)
+{
+  switch (punit->activity) {
+  case ACTIVITY_FORTIFYING:
+  case ACTIVITY_FORTIFIED:
+    return TRUE;
+  default:
+    return FALSE;
+  }
+}
+
 /**************************************************************************
   Return TRUE unless it is known to be imposible to disband this unit at
   its current position to get full shields for building a wonder.

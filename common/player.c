@@ -981,6 +981,8 @@ bool can_player_see_unit_at(const struct player *pplayer,
 
 /****************************************************************************
   Checks if a unit can be seen by pplayer at its current location.
+  With certain setting, fortifying or fortified units are not considered
+  transported for the vision purposes
 
   See can_player_see_unit_at.
 ****************************************************************************/
@@ -988,7 +990,9 @@ bool can_player_see_unit(const struct player *pplayer,
 			 const struct unit *punit)
 {
   return can_player_see_unit_at(pplayer, punit, unit_tile(punit),
-                                unit_transported(punit));
+                                unit_transported(punit)
+                                && !(game.server.see_fortified_in_transports
+                                     && unit_has_f_activity(punit)));
 }
 
 /****************************************************************************

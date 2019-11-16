@@ -2315,6 +2315,16 @@ static struct setting settings[] = {
               "have previously seen the tiles."),
            NULL, NULL, GAME_DEFAULT_FOGGEDBORDERS)
 
+  GEN_BOOL("see_fortified_in_transports",
+           game.server.see_fortified_in_transports,
+           SSET_RULES, SSET_MILITARY, SSET_RARE, SSET_TO_CLIENT,
+           N_("Whether units can't at once hide in a transport "
+              "and be fortified"),
+           N_("If this setting is enabled, players will be able "
+              "to see non-allied units if they are fortifying "
+              "or fortified while they are loaded in a transport."),
+           NULL, NULL, FALSE)
+
   GEN_BITWISE("airliftingstyle", game.info.airlifting_style,
               SSET_RULES_FLEXIBLE, SSET_MILITARY, SSET_SITUATIONAL,
               SSET_TO_CLIENT, N_("Airlifting style"),

@@ -195,6 +195,7 @@ struct civ_game {
       unsigned autosaves; /* FIXME: char would be enough, but current settings.c code wants to
                              write sizeof(unsigned) bytes */
       bool savepalace;
+      bool see_fortified_in_transports;
       bool homecaughtunits;
       char start_units[MAX_LEN_STARTUNIT];
       bool start_city;

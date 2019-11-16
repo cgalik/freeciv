@@ -432,6 +432,7 @@ static void game_defaults(void)
     game.server.save_options.save_private_map = TRUE;
     game.server.save_options.save_starts = TRUE;
     game.server.savepalace        = GAME_DEFAULT_SAVEPALACE;
+    game.server.see_fortified_in_transports = FALSE;
     game.server.scorelog          = GAME_DEFAULT_SCORELOG;
     game.server.scoreloglevel     = GAME_DEFAULT_SCORELOGLEVEL;
     game.server.scoreturn         = GAME_DEFAULT_SCORETURN - 1;
