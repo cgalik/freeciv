@@ -87,6 +87,8 @@ int luascript_do_file(struct fc_lua *fcl, const char *filename);
 bool luascript_callback_invoke(struct fc_lua *fcl, const char *callback_name,
                                int nargs, enum api_types *parg_types,
                                va_list args);
+bool luascript_callback_invoke_stack(struct fc_lua *fcl,
+                                     const char *callback_name, int nargs);
 
 void luascript_remove_exported_object(struct fc_lua *fcl, void *object);
 

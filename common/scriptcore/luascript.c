@@ -627,6 +627,49 @@ int luascript_do_file(struct fc_lua *fcl, const char *filename)
   return status;
 }
 
+/*************************************************************************//**
+  Invoke the 'callback_name' Lua function on nargs stack values.
+  The callback will operate on a copy of the values.
+*****************************************************************************/
+bool luascript_callback_invoke_stack(struct fc_lua *fcl,
+                                     const char *callback_name, int nargs)
+{
+  bool stop_emission = FALSE;
+  int funcpos;
+
+  fc_assert_ret_val(fcl, FALSE);
+  fc_assert_ret_val(fcl->state, FALSE);
+
+  /* The function name */
+  lua_getglobal(fcl->state, callback_name);
+
+  if (!lua_isfunction(fcl->state, -1)) {
+    luascript_log(fcl, LOG_ERROR, "lua error: Unknown callback '%s'",
+                  callback_name);
+    lua_pop(fcl->state, 1);
+    return FALSE;
+  }
+
+  luascript_log(fcl, LOG_DEBUG, "lua callback: '%s'", callback_name);
+
+  funcpos = lua_gettop(fcl->state);
+  for (int i = funcpos - nargs; i < funcpos; i++) {
+    lua_pushvalue(fcl->state, i);
+  }
+
+  /* Call the function with nargs arguments, return 1 results */
+  if (luascript_call(fcl, nargs, 1, NULL)) {
+    return FALSE;
+  }
+
+  /* Shall we stop the emission of this signal? */
+  if (lua_isboolean(fcl->state, -1)) {
+    stop_emission = lua_toboolean(fcl->state, -1);
+  }
+  lua_pop(fcl->state, 1);   /* pop return value */
+
+  return stop_emission;
+}
 
 /*****************************************************************************
   Invoke the 'callback_name' Lua function.

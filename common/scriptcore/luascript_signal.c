@@ -171,17 +171,15 @@ void luascript_signal_emit_valist(struct fc_lua *fcl, const char *signal_name,
   fc_assert_ret(fcl->signals);
 
   if (luascript_signal_hash_lookup(fcl->signals, signal_name, &psignal)) {
+    /* Calling the callbacks. The objects may be destroyed in process. */
+    luascript_push_args(fcl, psignal->nargs, psignal->arg_types, args);
     signal_callback_list_iterate(psignal->callbacks, pcallback) {
-      va_list args_cb;
-
-      va_copy(args_cb, args);
-      if (luascript_callback_invoke(fcl, pcallback->name, psignal->nargs,
-                                    psignal->arg_types, args_cb)) {
-        va_end(args_cb);
+      if (luascript_callback_invoke_stack(fcl, pcallback->name,
+                                          psignal->nargs)) {
         break;
       }
-      va_end(args_cb);
     } signal_callback_list_iterate_end;
+    lua_pop(fcl->state, psignal->nargs);
   } else {
     luascript_log(fcl, LOG_ERROR, "Signal \"%s\" does not exist, so cannot "
                                   "be invoked.", signal_name);
