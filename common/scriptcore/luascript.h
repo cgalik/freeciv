@@ -71,6 +71,7 @@ void luascript_log(struct fc_lua *fcl, enum log_level level,
 void luascript_log_vargs(struct fc_lua *fcl, enum log_level level,
                          const char *format, va_list args);
 
+enum api_types luascript_value_api_type(lua_State *L, int obj);
 void luascript_push_args(struct fc_lua *fcl, int nargs,
                          enum api_types *parg_types, va_list args);
 void luascript_pop_returns(struct fc_lua *fcl, const char *func_name,
@@ -91,6 +92,21 @@ bool luascript_callback_invoke_stack(struct fc_lua *fcl,
                                      const char *callback_name, int nargs);
 
 void luascript_remove_exported_object(struct fc_lua *fcl, void *object);
+
+/* Manipulate Lua tables passed to/from callbacks */
+enum api_types luascript_field_api_type(lua_State *L, int t, const char* f);
+enum api_types luascript_index_api_type(lua_State *L, int t, int i);
+void luascript_table_rawgetfield(struct fc_lua *M, int t, const char *n,
+                                 const char* f,
+                                 enum api_types apit, va_list args);
+void luascript_table_rawgeti(struct fc_lua *M, int t, const char *n, int i,
+                             enum api_types apit, va_list args);
+void luascript_rawsetfield(struct fc_lua *M, int t, const char *f,
+                           enum api_types vt, va_list args);
+void luascript_rawseti(struct fc_lua *M, int t, int i,
+                       enum api_types vt, va_list args);
+int luascript_rawlen(lua_State *L, int t);
+void luascript_trunc(lua_State *L, int obj);
 
 /* Load / save variables. */
 void luascript_vars_save(struct fc_lua *fcl, struct section_file *file,

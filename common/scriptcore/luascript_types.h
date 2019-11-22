@@ -105,6 +105,8 @@ typedef const struct city_list_link City_List_Link;
 #define SPECENUM_VALUE16NAME "Achievement"
 #define SPECENUM_VALUE17      API_TYPE_ACTION
 #define SPECENUM_VALUE17NAME "Action"
+#define SPECENUM_VALUE18      API_TYPE_TABLE
+#define SPECENUM_VALUE18NAME "Table"
 #include "specenum_gen.h"
 
 #ifdef __cplusplus
