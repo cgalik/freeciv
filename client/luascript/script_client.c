@@ -73,6 +73,114 @@ static void script_client_output(struct fc_lua *fcl, enum log_level level,
 
 static void script_client_signal_create(void);
 
+/***********************************************************************//****
+  Push an empty table into Lua stack, return its position
+  To be cleared with script_client_obj_done(this_or_further_value)
+*****************************************************************************/
+int script_client_newtable(void) {
+  lua_State *L;
+  
+  fc_assert_ret_val(main_fcl, 0);
+  L = main_fcl->state;
+  fc_assert_ret_val(L, 0);
+  
+  lua_newtable(L);
+  return lua_gettop(L);
+}
+
+/***********************************************************************//****
+  Adds (raw way) an integer key to a table.
+  All values except the first are ignored.
+*****************************************************************************/
+void script_client_table_seti(int t, int i, enum api_types vt, ...) {
+  va_list args;
+
+  va_start(args, vt);
+  luascript_rawseti(main_fcl, t, i, vt, args);
+  va_end(args);
+}
+
+/***********************************************************************//****
+  Adds (raw way) a string key to a table.
+  All values except the first are ignored.
+*****************************************************************************/
+void script_client_table_setfield(int t, const char *f,
+                                  enum api_types vt, ...) {
+  va_list args;
+
+  va_start(args, vt);
+  luascript_rawsetfield(main_fcl, t, f, vt, args);
+  va_end(args);
+}
+
+/***********************************************************************//****
+  We give callback a table and it may put something inside. Check what type.
+*****************************************************************************/
+enum api_types script_client_table_field_type(int t, const char* f) {
+  fc_assert(main_fcl);
+
+  return luascript_field_api_type(main_fcl->state, t, f);
+}
+
+/***********************************************************************//****
+  We give callback a table and it may put something inside. Check what type.
+*****************************************************************************/
+enum api_types script_client_table_i_type(int t, int i) {
+  fc_assert(main_fcl);
+
+  return luascript_index_api_type(main_fcl->state, t, i);
+}
+
+/***********************************************************************//****
+  We give callback a table and it may change it. Check sequence length.
+  Returns 0 on errors. Uses raw table access.
+*****************************************************************************/
+int script_client_table_len(int t) {
+  fc_assert_ret_val(main_fcl, 0);
+
+  return luascript_rawlen(main_fcl->state, t);
+}
+
+/***********************************************************************//****
+  Routine to get feedback from a signal: we give signal a table,
+  signal changes its contents, we check how.
+  If the key type does not match apit, does not change *args and
+  logs out an error using table name n if not NULL.
+  Uses raw table access but for some types may use conversion metamethod.
+*****************************************************************************/
+void script_client_table_n_geti(int t, const char *n, int i,
+                                enum api_types apit, ...) {
+  va_list args;
+
+  va_start(args, apit);
+  luascript_table_rawgeti(main_fcl, t, n, i, apit, args);
+  va_end(args);
+}
+
+/***********************************************************************//****
+  Routine to get feedback from a signal: we give it a table,
+  it changes its contents, we check how.
+  If the key type does not match apit, does not change v and
+  logs out an error using table name n if not NULL.
+  Uses raw table access but for some types may use conversion metamethod.
+*****************************************************************************/
+void script_client_table_n_getfield(int t, const char *n, const char* f, 
+                                    enum api_types apit, ...) {
+  va_list args;
+
+  va_start(args, apit);
+  luascript_table_rawgetfield(main_fcl, t, n, f, apit, args);
+  va_end(args);
+}
+
+/***********************************************************************//****
+  Clears Lua stack top starting from the value obj (including it)
+*****************************************************************************/
+void script_client_obj_done(int obj) {
+  fc_assert_ret(main_fcl);
+  luascript_trunc(main_fcl->state, obj);
+}
+
 /*****************************************************************************
   Parse and execute the script in str
 *****************************************************************************/
@@ -320,4 +428,23 @@ void script_client_signal_emit(const char *signal_name, ...)
 static void script_client_signal_create(void)
 {
   luascript_signal_create(main_fcl, "new_tech", 0);
+  /* Unit peekers */
+  luascript_signal_create(main_fcl, "unit_create", 1, API_TYPE_UNIT);
+  luascript_signal_create(main_fcl, "unit_remove", 1, API_TYPE_UNIT);
+  luascript_signal_create(main_fcl, "unit_moved", 3, API_TYPE_UNIT,
+                          API_TYPE_TILE, API_TYPE_TILE);
+  luascript_signal_create(main_fcl, "unit_captured", 2,
+                          API_TYPE_UNIT, API_TYPE_PLAYER);
+  luascript_signal_create(main_fcl, "combat_info", 5,
+                          API_TYPE_UNIT, API_TYPE_UNIT,
+                          API_TYPE_INT, API_TYPE_INT, API_TYPE_BOOL);
+  /* City peekers */
+  luascript_signal_create(main_fcl, "city_create", 1, API_TYPE_CITY);
+  luascript_signal_create(main_fcl, "city_transferred", 1, API_TYPE_CITY,
+                          API_TYPE_PLAYER, API_TYPE_PLAYER);
+  luascript_signal_create(main_fcl, "city_remove", 1, API_TYPE_CITY);
+  /* Message peeker */
+  luascript_signal_create(main_fcl, "event", 6,
+                          API_TYPE_STRING, API_TYPE_TILE, API_TYPE_INT,
+                          API_TYPE_INT, API_TYPE_PLAYER, API_TYPE_TABLE);
 }
