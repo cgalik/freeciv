@@ -24,6 +24,7 @@
 /* common */
 #include "game.h"
 #include "government.h"
+#include "research.h"
 #include "unitlist.h"
 
 /* client/include */
@@ -236,4 +237,99 @@ void disband_all_units(struct unit_type *punittype, bool in_cities_only,
     fc_snprintf(message, message_sz, _("No %s could be disbanded."),
                 utype_name_translation(punittype));
   }
+}
+
+/**********************************************************************//**
+  Fills the commentary and all for immediate research confirmation popup.
+  *certain is if we are sure the tech can be immediately researched
+**************************************************************************/
+bool immediate_research_may_happen(char *buf, int buf_sz, Tech_type_id tech,
+                                   bool *certain)
+{
+  struct research *presearch =
+    (client_has_player() ? research_get(client_player()) : NULL);
+  int cost = research_total_bulbs_required(presearch, tech, FALSE);
+  int bulbs, loss;
+  int min_cost = (int) (cost * min_leakage_ratio(client_player(), tech));
+  struct option *tpo;
+  struct advance *vap = valid_advance_by_number(tech);
+
+  fc_assert_ret_val(presearch, FALSE);
+  fc_assert_ret_val(cost, FALSE);
+  fc_assert_ret_val(vap, FALSE);
+
+  bulbs = (tech == presearch->researching_saved)
+          ? presearch->bulbs_researching_saved
+          : presearch->bulbs_researched;
+
+  /* In some cases you have more bulbs than your current tech costs... */
+  if (tech != presearch->researching_saved) {
+    tpo = optset_option_by_name(server_optset, "techpenalty");
+
+    if (!tpo) {
+      log_error("techpenalty server option unknown");
+      loss = 0;
+    } else {
+      /* Loss, if it is a probability that we can't change for free */
+      loss = option_int_get(tpo) * bulbs / 100;
+    }
+  } else {
+    loss = 0;
+  }
+    fc_assert(bulbs >= loss);
+  if(!min_cost) {
+    min_cost = 1;
+  }
+  log_debug("Consider switching to %s with %d bulbs (%d|%d), %d losing, "
+            "%d..%d expecting to spend",
+            advance_rule_name(advance_by_number(tech)), bulbs,
+            presearch->bulbs_researching_saved, presearch->bulbs_researched,
+            loss, min_cost, cost);
+  
+  fc_snprintf(buf, buf_sz, PL_("Research %s for %d bulb?\n",
+                               "Research %s for %d bulbs?\n", cost),
+              advance_name_translation(vap), cost);
+    
+  if (bulbs >= min_cost) { /* bulbs - loss, but how we know there is loss? */
+    if (min_cost != cost) {
+      cat_snprintf(buf, buf_sz,
+                   PL_("(The cost might be down to %d bulb"
+                       " due to tech leakage.)\n",
+                       "(The cost might be down to %d bulbs"
+                       " due to tech leakage.)\n",
+                       min_cost),
+                   min_cost);
+    }
+    if (loss > 0) { /* TODO: may we know if there is loss for sure? */
+      cat_snprintf(buf, buf_sz,
+                   PL_("%d bulb may be lost "
+                       "if you have got no advance this turn.\n",
+                       "%d bulbs may be lost "
+                       "if you have got no advance this turn.\n", loss),
+                   loss);
+    }
+
+    if (min_cost == cost && !loss) {
+      cat_snprintf(buf, buf_sz,
+                   PL_("%d bulb will remain.\n",
+                       "%d bulbs will remain.\n", bulbs - cost - loss),
+                   bulbs - cost - loss);
+    } else {
+      int max_rem = bulbs - min_cost;
+      int min_rem = bulbs - cost - loss;
+      cat_snprintf(buf, buf_sz,
+                   /* FIXME: in some languages does PL_ act good here? */
+                   PL_("%d to %d bulb will remain.\n",
+                       "%d to %d bulbs will remain.\n",
+                       max_rem),
+                   MAX(0, min_rem),
+                   max_rem
+                   );
+    }
+
+    *certain = bulbs - loss >= cost;
+    return TRUE;
+  }
+
+  return FALSE;
 }

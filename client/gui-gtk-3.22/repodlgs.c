@@ -102,6 +102,8 @@ static void science_report_current_callback(GtkComboBox *combo,
 static void science_report_show_all_callback(GtkComboBox *combo,
                                              gpointer data);
 static void science_report_goal_callback(GtkComboBox *combo, gpointer data);
+static void science_report_confirm_research(Tech_type_id tech,
+                                            struct gui_dialog *pdialog);
 static void science_report_init(struct science_report *preport);
 static void science_report_free(struct science_report *preport);
 
@@ -147,6 +149,39 @@ static inline void science_report_store_set(GtkListStore *store,
                      SRD_COL_ID, tech,
                      -1);
 }
+
+/************************************************************************//**
+  Handles changing research: if changing may have effect immediately,
+  asks to confirm and warns about bulb loss.
+****************************************************************************/
+static void science_report_confirm_research(Tech_type_id tech,
+                                            struct gui_dialog *pdialog)
+{
+  GtkWidget *chpop;
+  bool imb;
+  char buf[511];
+  fc_assert_ret(pdialog);
+
+  if (immediate_research_may_happen(buf, sizeof buf, tech, &imb)) {
+    chpop = gtk_message_dialog_new(NULL,GTK_DIALOG_MODAL
+                                   | GTK_DIALOG_DESTROY_WITH_PARENT,
+                                   GTK_MESSAGE_QUESTION,
+                                   GTK_BUTTONS_OK_CANCEL,
+                                   "%s", buf);
+    setup_dialog(chpop, gui_dialog_get_toplevel(pdialog));
+
+    gtk_window_set_title(GTK_WINDOW(chpop),
+                         imb ? _("Research now!")
+                         : _("Immediate research might happen!"));
+    if (GTK_RESPONSE_OK == gtk_dialog_run(GTK_DIALOG(chpop))) {
+      dsend_packet_player_research(&client.conn, tech);
+    }
+    gtk_widget_destroy(chpop);
+  } else {
+    dsend_packet_player_research(&client.conn, tech);
+  }
+}
+
 
 /****************************************************************************
   Get the active tech of the combo.
@@ -216,7 +251,8 @@ static gboolean science_diagram_button_release_callback(GtkWidget *widget,
       switch (research_invention_state(research_get(client_player()),
                                        tech)) {
        case TECH_PREREQS_KNOWN:
-         dsend_packet_player_research(&client.conn, tech);
+         /* If we may research target tech immediately, popup a dialog */
+         science_report_confirm_research(tech, science_report.shell);
          break;
        case TECH_UNKNOWN:
          dsend_packet_player_tech_goal(&client.conn, tech);
@@ -279,7 +315,7 @@ static GtkWidget *science_diagram_new(void)
                    G_CALLBACK(science_diagram_update), NULL);
   g_signal_connect(diagram, "button-release-event",
                    G_CALLBACK(science_diagram_button_release_callback),
-                   NULL);
+                   diagram);
 
   return diagram;
 }
@@ -496,7 +532,8 @@ static void science_report_current_callback(GtkComboBox *combo,
   if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(data))) {
     popup_help_dialog_typed(tech_name, HELP_TECH);
   } else if (can_client_issue_orders()) {
-    dsend_packet_player_research(&client.conn, tech);
+    /* If we can research target tech immediately, popup a dialog */
+    science_report_confirm_research(tech, science_report.shell);
   }
   /* Revert, or we will be not synchron with the server. */
   science_report_combo_set_active(combo, research_get

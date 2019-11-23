@@ -52,6 +52,8 @@ void sell_all_improvements(struct impr_type *pimprove, bool redundant_only,
 			   char *message, size_t message_sz);
 void disband_all_units(struct unit_type *punittype, bool in_cities_only,
 		       char *message, size_t message_sz);
+bool immediate_research_may_happen(char *buf, int buf_sz, Tech_type_id tech,
+                                   bool *certain);
 
 #ifdef __cplusplus
 }
