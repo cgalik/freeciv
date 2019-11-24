@@ -480,6 +480,24 @@ static const struct sset_val_name *brem_name(int brem_type)
 }
 
 /****************************************************************************
+  Visibility in transports mode accessor.
+****************************************************************************/
+static const struct sset_val_name *vistr_name(int vistr_type)
+{
+  switch (vistr_type) {
+  NAME_CASE(VISTR_NONE, "NONE",
+            N_("Non-allied units in transports are hidden"));
+  NAME_CASE(VISTR_FORTIF, "FORTIFY",
+            N_("A transported unit reveals itself fortifying or fortified"));
+  NAME_CASE(VISTR_ACT, "ACTIVITIES",
+            N_("Any interaction with the terrain reveals transported units")
+           );
+  NAME_CASE(VISTR_ALL, "ALL", N_("Transports don't hide their cargo"));
+  }
+  return NULL;
+}
+
+/****************************************************************************
   Revolution length type setting names accessor.
 ****************************************************************************/
 static const struct sset_val_name *revolentype_name(int revolentype)
@@ -2315,15 +2333,15 @@ static struct setting settings[] = {
               "have previously seen the tiles."),
            NULL, NULL, GAME_DEFAULT_FOGGEDBORDERS)
 
-  GEN_BOOL("see_fortified_in_transports",
-           game.server.see_fortified_in_transports,
+  GEN_ENUM("cargo_visibility",
+           game.server.cargo_visibility,
            SSET_RULES, SSET_MILITARY, SSET_RARE, SSET_TO_CLIENT,
-           N_("Whether units can't at once hide in a transport "
-              "and be fortified"),
-           N_("If this setting is enabled, players will be able "
-              "to see non-allied units if they are fortifying "
-              "or fortified while they are loaded in a transport."),
-           NULL, NULL, FALSE)
+           N_("What non-allied units can be visible inside transports"),
+           N_("This setting governs the visibility of non-allied units "
+              "loaded into transports that would be visible if not loaded."
+              "\nYou can show none of them, ones doing specific activities"
+              " or even all of them."),
+           NULL, NULL, NULL, vistr_name, VISTR_NONE)
 
   GEN_BITWISE("airliftingstyle", game.info.airlifting_style,
               SSET_RULES_FLEXIBLE, SSET_MILITARY, SSET_SITUATIONAL,

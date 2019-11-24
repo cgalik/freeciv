@@ -369,6 +369,7 @@ static void game_defaults(void)
     game.server.autoattack        = GAME_DEFAULT_AUTOATTACK;
     game.server.barbarianrate     = GAME_DEFAULT_BARBARIANRATE;
     game.server.bombardment_reveal = GAME_DEFAULT_BOMBARDMENT_REVEAL;
+    game.server.cargo_visibility  = VISTR_NONE;
     game.server.civilwarsize      = GAME_DEFAULT_CIVILWARSIZE;
     game.server.connectmsg[0]     = '\0';
     game.server.conquercost       = GAME_DEFAULT_CONQUERCOST;
@@ -432,7 +433,6 @@ static void game_defaults(void)
     game.server.save_options.save_private_map = TRUE;
     game.server.save_options.save_starts = TRUE;
     game.server.savepalace        = GAME_DEFAULT_SAVEPALACE;
-    game.server.see_fortified_in_transports = FALSE;
     game.server.scorelog          = GAME_DEFAULT_SCORELOG;
     game.server.scoreloglevel     = GAME_DEFAULT_SCORELOGLEVEL;
     game.server.scoreturn         = GAME_DEFAULT_SCORETURN - 1;

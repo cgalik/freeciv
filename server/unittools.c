@@ -1668,8 +1668,10 @@ static void server_remove_unit_full(struct unit *punit, bool transported,
   players_iterate(aplayer) {
     if (can_player_see_unit_at(aplayer, punit, unit_tile(punit),
                                transported
-                               && !(game.server.see_fortified_in_transports
-                                    && unit_has_f_activity(punit)))) {
+                               && !(game.server.cargo_visibility
+                                    == VISTR_ALL)
+                               && !unit_activity_is_revealing(
+                                    punit->activity))) {
       lsend_packet_unit_remove(aplayer->connections, &packet);
     }
   } players_iterate_end;
@@ -2431,9 +2433,9 @@ void package_short_unit(struct unit *punit,
   }
 
   /* Transported_by information is sent to the client even for units that
-   * aren't fully known.  Note that for non-allied players, any transported
-   * unit can't be seen at all (except if fortifying on certain setting).
-   * For allied players we have to know if
+   * aren't fully known.  Note that for non-allied players, transported
+   * unit visibility depends on game.server.cargo_visibility setting
+   * and sometimes its activity. For allied players we have to know if
    * transporters have room in them so that we can load units properly. */
   if (!unit_transported(punit)) {
     packet->transported = FALSE;
@@ -3012,15 +3014,8 @@ void unit_loaded_hide(struct unit *punit)
   struct player *pplayer = unit_owner(punit);
   struct tile *ptile = unit_tile(punit);
 
-  switch (punit->activity) {
-  /* Your ruleset is weird if your planes fortify but why not */
-  case ACTIVITY_FORTIFIED:
-  case ACTIVITY_FORTIFYING:
-    if (game.server.see_fortified_in_transports) {
-      /* everybody involved still see the unit */
-      break;
-    }
-  default:
+  if (game.server.cargo_visibility != VISTR_ALL
+      && !unit_activity_is_revealing(punit->activity)) {
     conn_list_iterate(game.est_connections, pconn) {
       struct player *aplayer = conn_get_player(pconn);
       
@@ -3507,9 +3502,7 @@ static struct unit_move_data *unit_move_data(struct unit *punit,
     pdata = fc_malloc(sizeof(*pdata));
     pdata->ref_count = 1;
     pdata->punit = punit;
-    if (game.server.see_fortified_in_transports) {
-      pdata->f_activity = unit_has_f_activity(punit);
-    }
+    pdata->f_activity = unit_activity_is_revealing(punit->activity);
     punit->server.moving = pdata;
     BV_CLR_ALL(pdata->can_see_unit);
   }

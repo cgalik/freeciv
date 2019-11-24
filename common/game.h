@@ -68,6 +68,18 @@ enum bombardment_reveal_mode {
 };
 #define BREM_LAST BREM_NONE
 
+enum cargo_visibility_mode {
+/* Non-allied units are hidden while transported */
+  VISTR_NONE,
+/* You can see fortified or fortifying foreign unit */
+  VISTR_FORTIF,
+/* A unit can't do most activities in transport without revealing itself */
+  VISTR_ACT,
+/* Transports don't hide units */
+  VISTR_ALL
+};
+#define VISTR_LAST VISTR_ALL
+
 enum autosave_type {
   AS_TURN = 0,
   AS_GAME_OVER,
@@ -195,7 +207,7 @@ struct civ_game {
       unsigned autosaves; /* FIXME: char would be enough, but current settings.c code wants to
                              write sizeof(unsigned) bytes */
       bool savepalace;
-      bool see_fortified_in_transports;
+      enum cargo_visibility_mode cargo_visibility;
       bool homecaughtunits;
       char start_units[MAX_LEN_STARTUNIT];
       bool start_city;
