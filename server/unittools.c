@@ -1181,6 +1181,8 @@ void bounce_unit(struct unit *punit, bool verbose)
   struct tile *punit_tile;
   struct unit_list *pcargo_units;
   int count = 0;
+  int cargo_count;
+  struct unit_bounce_data data;
 
   /* I assume that there are no topologies that have more than
    * (2d + 1)^2 tiles in the "square" of "radius" d. */
@@ -1191,6 +1193,8 @@ void bounce_unit(struct unit *punit, bool verbose)
     return;
   }
 
+  cargo_count = get_transporter_occupancy(punit);
+  unit_bounce_data_fill(&data, punit);
   pplayer = unit_owner(punit);
   punit_tile = unit_tile(punit);
 
@@ -1212,6 +1216,16 @@ void bounce_unit(struct unit *punit, bool verbose)
 
   if (count > 0) {
     struct tile *ptile = tiles[fc_rand(count)];
+    struct unit_bounce_data* cargolist;
+
+    if (cargo_count > 0) {
+      struct unit_bounce_data* pdata;
+
+      pdata = cargolist = fc_malloc(cargo_count * sizeof(*cargolist));
+      unit_cargo_iterate(punit, cargo) {
+        unit_bounce_data_fill(pdata++, cargo);
+      } unit_cargo_iterate_end;
+    }
 
     if (verbose) {
       notify_player(pplayer, ptile, E_UNIT_RELOCATED, ftc_server,
@@ -1219,13 +1233,26 @@ void bounce_unit(struct unit *punit, bool verbose)
                     _("Moved your %s."),
                     unit_link(punit));
     }
+    /* Start with it to make invasions slow and send info once */
+    if (unit_transported(punit)) {
+      unit_transport_unload(punit);
+    }
+    slow_invasions_bounced(punit, punit_tile, ptile);
     unit_move(punit, ptile, 0, NULL);
+    unit_bounce_data_restore(&data);
+    if (cargo_count > 0) {
+      struct unit_bounce_data* pdata = cargolist;
+      while (pdata < &cargolist[cargo_count]) {
+        unit_bounce_data_restore(pdata++);
+      }
+      FC_FREE(cargolist);
+    }
     return;
   }
 
   /* Didn't find a place to bounce the unit, going to disband it.
    * Try to bounce transported units. */
-  if (0 < get_transporter_occupancy(punit)) {
+  if (0 < cargo_count) {
     pcargo_units = unit_transport_cargo(punit);
     unit_list_iterate(pcargo_units, pcargo) {
       bounce_unit(pcargo, verbose);

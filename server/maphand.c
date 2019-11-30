@@ -1655,6 +1655,13 @@ static void ocean_to_land_fix_rivers(struct tile *ptile)
 ****************************************************************************/
 static void check_units_single_tile(struct tile *ptile)
 {
+  const int count = unit_list_size(ptile->units);
+  struct unit_bounce_data data[count];
+  struct unit_bounce_data *pdata = &data[0];
+
+  unit_list_iterate(ptile->units, punit) {
+    unit_bounce_data_fill(pdata++, punit);
+  } unit_list_iterate_end;
   unit_list_iterate_safe(ptile->units, punit) {
     bool unit_alive = TRUE;
 
@@ -1673,6 +1680,8 @@ static void check_units_single_tile(struct tile *ptile)
                         E_UNIT_RELOCATED, ftc_server,
                         _("Moved your %s due to changing terrain."),
                         unit_link(punit));
+          /* set zero mp here to send it */
+          slow_invasions_bounced(punit, ptile, ptile2);
           unit_alive = unit_move(punit, ptile2, 0, NULL);
           if (unit_alive && punit->activity == ACTIVITY_SENTRY) {
             unit_activity_handling(punit, ACTIVITY_IDLE);
@@ -1690,10 +1699,16 @@ static void check_units_single_tile(struct tile *ptile)
                       E_UNIT_LOST_MISC, ftc_server,
                       _("Disbanded your %s due to changing terrain."),
                       unit_tile_link(punit));
+        /* Maybe fix it: here we can lose some cargo in the swamp
+         * if other transports that could save it are bounced earlier.
+         * Also, the cargo could be just bounced but now it sinks. */
         wipe_unit(punit, ULR_NONNATIVE_TERR, NULL);
       }
     }
   } unit_list_iterate_safe_end;
+  while (pdata > &data[0]) {
+    unit_bounce_data_restore(--pdata);
+  }
 }
 
 /****************************************************************************
@@ -2361,4 +2376,33 @@ void give_distorted_map(struct player *pfrom, struct player *pto,
   } whole_map_iterate_end;
 
   unbuffer_shared_vision(pto);
+}
+
+/************************************************************************//**
+  Fills data with punit's id and values that are lost during bouncing punit
+  and may be need to be restored later
+****************************************************************************/
+void unit_bounce_data_fill(struct unit_bounce_data* data,
+                           const struct unit* punit)
+{
+  fc_assert_ret(data && punit);
+  data->id = punit->id;
+  data->action_timestamp = punit->server.action_timestamp;
+  data->action_turn = punit->server.action_turn;
+}
+
+/************************************************************************//**
+  Checks if game unit #id still exists and if so restores the data
+  that were saved for the case of rule-enforced move
+****************************************************************************/
+void unit_bounce_data_restore(const struct unit_bounce_data* data)
+{
+  struct unit *punit;
+
+  fc_assert_ret(data);
+  punit = game_unit_by_number(data->id);
+  if (punit) {
+    punit->server.action_timestamp = data->action_timestamp;
+    punit->server.action_turn = data->action_turn;
+  }
 }
