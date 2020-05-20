@@ -4209,8 +4209,9 @@ static bool autocreate_command(struct connection *caller, char *arg, bool check)
       player_set_nation(pplayer, pnation);
     }
     if (conf_team[0] != '\0') {
-      char dupa[1024];
-      sprintf(dupa, "\"%s\" \"%s\"", conf_player, conf_team);
+      /* avoid output truncation warning in gcc */
+      char dupa[sizeof(conf_player) + sizeof(conf_team) + 5];
+      snprintf(dupa, sizeof(dupa), "\"%s\" \"%s\"", conf_player, conf_team);
       team_command(caller, dupa, check);
     }
   }
