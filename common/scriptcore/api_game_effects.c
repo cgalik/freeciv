@@ -60,6 +60,49 @@ int api_effects_player_bonus(lua_State *L, Player *pplayer,
 }
 
 /*****************************************************************************
+  Returns the effect bonus for a player for given output
+*****************************************************************************/
+int api_effects_player_output_bonus(lua_State *L, Player *pplayer, int oty,
+                                    const char *effect_type)
+{
+  enum effect_type etype = EFT_COUNT;
+
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, pplayer, 2, Player, 0);
+  LUASCRIPT_CHECK_ARG(L, oty >= O_FOOD && oty < O_LAST,
+                      3, "Wrong output type", 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, effect_type, 4, string, 0);
+
+  etype = effect_type_by_name(effect_type, fc_strcasecmp);
+  if (!effect_type_is_valid(etype)) {
+    return 0;
+  }
+  return get_player_output_bonus(pplayer, get_output_type(oty), etype);
+}
+
+/*****************************************************************************
+  Returns the effect bonus for a player for given output
+*****************************************************************************/
+int api_effects_player_ostr_bonus(lua_State *L, Player *pplayer,
+                                  const char* otn, const char *effect_type)
+{
+  enum effect_type etype = EFT_COUNT;
+  enum output_type_id oty = output_type_by_identifier(otn);
+
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, pplayer, 2, Player, 0);
+  LUASCRIPT_CHECK_ARG(L, oty != O_LAST,
+                      3, "Wrong output type name", 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, effect_type, 4, string, 0);
+
+  etype = effect_type_by_name(effect_type, fc_strcasecmp);
+  if (!effect_type_is_valid(etype)) {
+    return 0;
+  }
+  return get_player_output_bonus(pplayer, get_output_type(oty), etype);
+}
+
+/*****************************************************************************
   Returns the effect bonus at a city.
 *****************************************************************************/
 int api_effects_city_bonus(lua_State *L, City *pcity, const char *effect_type)

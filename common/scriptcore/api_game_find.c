@@ -36,6 +36,47 @@ Player *api_find_player(lua_State *L, int player_id)
 }
 
 /*****************************************************************************
+  Return a player with the given name
+*****************************************************************************/
+Player *api_find_player_by_name(lua_State *L, const char* plrname)
+{  
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_ARG_NIL(L, plrname, 2, string, NULL);
+
+  return player_by_name(plrname);
+}
+
+/*****************************************************************************
+  Return any city with the given name (case-insensitive).
+*****************************************************************************/
+City *api_find_city_by_name(lua_State *L, Player *pplayer, const char *name)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_ARG_NIL(L, name, 3, string, NULL);
+
+  if (pplayer) {
+    return city_list_find_name(pplayer->cities, name);
+  } else {
+    cities_iterate (pcity) {
+      if (!fc_strcasecmp(name, city_name_get(pcity))) {
+        return pcity;
+      }
+    } cities_iterate_end;
+  }
+  return NULL;
+}
+
+/*****************************************************************************
+  Return any city of a player pn with the given name (case-insensitive)
+*****************************************************************************/
+City *api_find_city_by_name2(lua_State *L, const char *pn, const char *name)
+{
+  Player *pplayer = pn ? player_by_name(pn) : NULL;
+
+  return api_find_city_by_name(L, pplayer, name);
+}
+
+/*****************************************************************************
   Return a player city with the given city_id.
 *****************************************************************************/
 City *api_find_city(lua_State *L, Player *pplayer, int city_id)

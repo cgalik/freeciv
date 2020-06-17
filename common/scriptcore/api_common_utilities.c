@@ -81,6 +81,17 @@ Direction api_utilities_str2dir(lua_State *L, const char *dir)
   return direction8_by_name(dir, fc_strcasecmp);
 }
 
+/*****************************************************************************
+  Get direction name
+*****************************************************************************/
+const char *api_utilities_dir2str(lua_State *L, Direction dir)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK(L, is_valid_dir(dir), "Direction is invalid", NULL);
+
+  return direction8_name(dir);
+}
+
 /**************************************************************************
   Previous (counter-clockwise) valid direction
 **************************************************************************/

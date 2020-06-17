@@ -25,8 +25,11 @@ extern "C" {
 #include "luascript_types.h"
 
 /* Object find module. */
+Player *api_find_player_by_name(lua_State *L, const char* plrname);
 Player *api_find_player(lua_State *L, int player_id);
 
+City *api_find_city_by_name2(lua_State *L, const char *pn, const char *name);
+City *api_find_city_by_name(lua_State *L, Player *pplayer, const char *name);
 City *api_find_city(lua_State *L, Player *pplayer, int city_id);
 
 Unit *api_find_unit(lua_State *L, Player *pplayer, int unit_id);

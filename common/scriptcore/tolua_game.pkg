@@ -37,6 +37,8 @@ struct Player {
   Nation_Type *nation;
   bool ai_controlled;
   bool is_alive;
+  bool is_male;
+  int nturns_idle;
 };
 
 struct City {
@@ -45,6 +47,18 @@ struct City {
   Player *original;
 
   const int id;
+  unsigned char martial_law;
+  unsigned char unit_happy_upkeep;
+  int food_stock;
+  int shield_stock;
+  int airlift;
+  bool did_buy;
+  bool did_sell;
+  
+  int before_change_shields;
+  int caravan_shields;
+  int disbanded_shields;
+  int last_turns_shield_surplus;
 };
 
 struct Connection {
@@ -59,12 +73,17 @@ struct Unit {
   int homecity;
 
   const int id;
+  int hp;
+  int fuel;
+  int activity_count;
 };
 
 struct Tile {
   Terrain *terrain;
 
   const int index @ id;
+  Player *owner;
+  signed short continent;
 };
 
 struct Government {
@@ -83,6 +102,9 @@ struct Building_Type {
 
 struct Unit_Type {
   int build_cost;
+  int move_rate;
+  int fuel;
+  int happy_cost;
 
   const int item_number @ id;
 };
@@ -113,6 +135,39 @@ struct Unit_List_Link {
 struct City_List_Link {
 };
 
+/* Constants */
+module FEELING {
+  enum { /* citizen_feeling */
+    FEELING_BASE @ BASE,		/* before any of the modifiers below */
+    FEELING_LUXURY @ LUXURY,	/* after luxury */
+    FEELING_EFFECT @ FEELING_FINAL,	/* after building effects */
+    FEELING_NATIONALITY @ NATIONALITY,  /* after citizen nationality effects */
+    FEELING_MARTIAL @ MARTIAL,	/* after units enforce martial order */
+    FEELING_FINAL @ FINAL	/* after wonders (final result) */
+  };
+}
+
+module CITIZEN {
+  enum { /* citizen_category */
+    CITIZEN_HAPPY @ HAPPY,
+    CITIZEN_CONTENT @ CONTENT,
+    CITIZEN_UNHAPPY @ UNHAPPY,
+    CITIZEN_ANGRY @ ANGRY,
+    CITIZEN_SPECIALIST @ SPECIALIST
+  };
+}
+
+module OUTPUT {
+  enum {/* output_type_id */
+    O_FOOD @ FOOD,
+    O_SHIELD @ SHIELD,
+    O_TRADE @ TRADE,
+    O_GOLD @ GOLD,
+    O_LUXURY @ LUXURY,
+    O_SCIENCE @ SCIENCE
+  };
+}
+
 /* Module Game */
 module game {
   int api_methods_game_turn
@@ -124,6 +179,8 @@ module Player {
   module properties {
     int api_methods_player_number
       @ id (lua_State *L, Player *self);
+    int api_methods_player_team_number
+      @ team_number (lua_State *L, Player *pplayer);
   }
 
   int api_methods_player_num_cities
@@ -167,6 +224,25 @@ function Player:exists()
   return true
 end
 
+-- Returns city-independent output waste level at tile, no Output_Waste_Pct
+function Player:waste_level_at(tile, oty, gct)
+  local gcdist = -1
+  if tolua.type(tile) == "Tile" then
+    if tolua.type(gct) == "Tile" then
+      gcdist = tile:map_distance(gct)
+    else
+      gcdist = tile:govcenter_dist(self)
+    end
+  end
+  oty = oty or "Trade"
+  if gcdist > 0 then
+    return (effects.player_output_bonus(self, oty, "Output_Waste") + gcdist
+      * effects.player_output_bonus(self, oty, "Output_Waste_By_Distance")
+    ) * 0.0001
+  else
+    return 1.0
+  end
+end
 $]
 
 /* Module City. */
@@ -176,6 +252,10 @@ module City {
       @ size(lua_State *L, City *self);
     Tile *api_methods_city_tile_get
       @ tile(lua_State *L, City *self);
+    int api_methods_city_supported_units_number
+      @ supported_count(lua_State *L, City *pcity);
+    lua_Object api_methods_city_production
+      @ production (lua_State *L, City *pcity);
   }
 
   bool api_methods_city_has_building
@@ -184,6 +264,15 @@ module City {
     @ map_sq_radius(lua_State *L, City *self);
   int api_methods_city_inspire_partisans
     @ inspire_partisans(lua_State *L, City *self, Player *inspirer);
+  double api_methods_city_waste_level_ostr
+    @ waste_level(lua_State *L, City *pcity,
+                  const char* otn, lua_Object gcd = 0);
+  double api_methods_city_waste_level
+    @ waste_level (lua_State *L, City *pcity,
+                   int otype = O_SHIELD, lua_Object gcd = 0);
+  int api_methods_city_happy_count
+    @ happy_count(lua_State *L, City *pcity,
+                  int cat = CITIZEN_HAPPY, int level = FEELING_FINAL);
 
   int api_methods_city_culture_get
     @ culture(lua_State *L, City *self);
@@ -207,6 +296,7 @@ function City:exists()
   return true
 end
 
+
 $]
 
 /* Module Unit. */
@@ -214,6 +304,14 @@ module Unit {
   module properties {
     Tile *api_methods_unit_tile_get
       @ tile(lua_State *L, Unit *self);
+    int api_methods_unit_moves_left_get
+      @ moves_left(lua_State *L, Unit *punit);
+    int api_methods_unit_vet_get
+      @ veteran(lua_State *L, Unit *punit);
+    const char *api_methods_unit_activity
+      @ activity(lua_State *L, Unit *punit);
+    lua_Object api_methods_unit_orders_index
+      @ orders_index(lua_State *L, Unit *punit);
   }
 
   Unit *api_methods_unit_transporter
@@ -222,6 +320,10 @@ module Unit {
     @ is_on_possible_city_tile (lua_State *L, Unit *self);
   Direction api_methods_unit_orientation_get
     @ facing(lua_State *L, Unit *self);
+  int api_methods_unit_move_rate
+    @ move_rate(lua_State *L, Unit *punit);
+  int api_methods_unit_activity_rate
+    @ activity_rate(lua_State *L, Unit *punit);
 }
 
 module methods_private {
@@ -270,6 +372,17 @@ module Tile {
     @ num_units (lua_State *L, Tile *self);
   int api_methods_tile_sq_distance
     @ sq_distance (lua_State *L, Tile *self, Tile *other);
+  int api_methods_tile_map_distance
+    @ map_distance(lua_State *L, Tile *ptile1, Tile *ptile2);
+  
+  int api_methods_tile_output
+    @ output (lua_State *L, Tile *self, int otype,
+              City *city = NULL);
+  int api_methods_tile_output_full
+    @ output (lua_State *L, Tile *self, int otype,
+              City *city, bool celeb);
+  int api_methods_tile_gcdist
+    @ govcenter_dist (lua_State *L, Tile *ptile, Player *plr);
 }
 
 $[
@@ -423,8 +536,14 @@ module City_List_Link {
 
 /* Module find. */
 module find {
+  Player *api_find_player_by_name
+    @ player (lua_State *L, const char* plrname);
   Player *api_find_player
     @ player (lua_State *L, int player_id);
+  City *api_find_city_by_name2
+    @ city (lua_State *L, const char *pn, const char *name);
+  City *api_find_city_by_name
+    @ city (lua_State *L, Player *pplayer, const char *name);
   City *api_find_city
     @ city (lua_State *L, Player *pplayer, int city_id);
   Unit *api_find_unit
@@ -479,6 +598,12 @@ module effects {
     @ world_bonus (lua_State *L, const char *effect_type);
   int api_effects_player_bonus
     @ player_bonus (lua_State *L, Player *pplayer, const char *effect_type);
+  int api_effects_player_ostr_bonus
+    @ player_output_bonus (lua_State *L, Player *pplayer,
+                           const char* otn, const char *effect_type);
+  int api_effects_player_output_bonus
+    @ player_output_bonus (lua_State *L, Player *pplayer, int oty,
+                           const char *effect_type);
   int api_effects_city_bonus
     @ city_bonus (lua_State *L, City *pcity, const char *effect_type);
 }
@@ -493,6 +618,8 @@ module direction {
    @ next_cw(lua_State *L, Direction self);
  Direction api_utilities_opposite_dir
    @ opposite(lua_State *L, Direction self);
+ const char *api_utilities_dir2str
+   @ name (lua_State *L, Direction dir);
 }
 
 $[
@@ -502,6 +629,7 @@ $[
 function str2direction(str)
   return direction.str2dir(str)
 end
+
 $]
 
 $[

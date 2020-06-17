@@ -29,6 +29,7 @@ Direction api_utilities_str2dir(lua_State *L, const char *dir);
 Direction api_utilities_dir_ccw(lua_State *L, Direction dir);
 Direction api_utilities_dir_cw(lua_State *L, Direction dir);
 Direction api_utilities_opposite_dir(lua_State *L, Direction dir);
+const char *api_utilities_dir2str(lua_State *L, Direction dir);
 
 const char *api_utilities_fc_version(lua_State *L);
 

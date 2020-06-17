@@ -38,6 +38,36 @@
 
 #include "api_game_methods.h"
 
+/* FIXME: Move this to some header files [[ */
+#define macro2str_base(__macro__) #__macro__
+#define macro2str(__macro__) macro2str_base(__macro__)
+
+static int tile_gcdist(const struct tile *ptile, const struct player *plr);
+/* ]] */
+
+static /* FIXME: Move this to some common C file [[ */
+int tile_gcdist(const struct tile *ptile, const struct player *plr)
+{
+  int res = FC_INFINITY;
+  struct city *gc = tile_city(ptile);
+  
+  if (gc && city_owner(gc) == plr && is_gov_center(gc)) {
+    return 0;
+  } else {
+    city_list_iterate(plr->cities, pc) {
+      /* Do not recheck current city */
+      if (gc != pc && is_gov_center(pc)) {
+        int dist = real_map_distance(ptile, pc->tile);
+
+        if (dist < res) {
+          res = dist;
+        }
+      }
+    } city_list_iterate_end;
+  }
+  return FC_INFINITY == res ? -1 : res;
+}
+/* ]] */
 
 /*****************************************************************************
   Return the current turn.
@@ -122,6 +152,82 @@ const char
   return improvement_name_translation(pbuilding);
 }
 
+/*********************************************************************//***
+  Returns how much of production of otype the city wastes.
+  If gcdist is specified, considers this govcener distance, otherwise
+  tries to calculate by available map data.
+  Does not consider trade min. size or unhappy state.
+**************************************************************************/
+double api_methods_city_waste_level(lua_State *L, City *pcity,
+                                    int otype, lua_Object gcd)
+{
+  int gcdist;
+
+  LUASCRIPT_CHECK_STATE(L, 0.);
+  LUASCRIPT_CHECK_SELF(L, pcity, 0.);
+  LUASCRIPT_CHECK_ARG(L, otype >= O_FOOD && otype < O_LAST,
+                      3, "Wrong output type", 0.);
+  
+  if (gcd && lua_isnumber(L, gcd)) {
+    gcdist = lua_tointeger(L, gcd);
+  } else {
+    gcdist = tile_gcdist(city_tile(pcity), city_owner(pcity));
+  }
+
+  if (gcdist < 0) { /* Waste all if no capital */
+    return 1.;
+  }
+  
+  return (double)
+  (get_city_output_bonus(pcity, get_output_type(otype), EFT_OUTPUT_WASTE)
+   + gcdist
+    * get_city_output_bonus(pcity, get_output_type(otype),
+                            EFT_OUTPUT_WASTE_BY_DISTANCE)
+  ) * 0.0001
+  * (100 - get_city_output_bonus(pcity, get_output_type(otype),
+                                 EFT_OUTPUT_WASTE_PCT));
+}
+
+/*********************************************************************//***
+  Returns how much of production of otn the city wastes.
+  Wrapper for the numeric otype function that understands output type names
+**************************************************************************/
+double
+api_methods_city_waste_level_ostr(lua_State *L, City *pcity,
+                                  const char* otn, lua_Object gcd)
+{
+  return api_methods_city_waste_level(L, pcity, 
+                                      output_type_by_identifier(otn), gcd);
+}
+
+/*********************************************************************//***
+  Tells how many citizens are as happy as cat at given level
+**************************************************************************/
+int api_methods_city_happy_count(lua_State *L, City *pcity,
+                                 int cat, int level)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);
+  LUASCRIPT_CHECK_ARG(L, cat >= CITIZEN_HAPPY && cat <= CITIZEN_SPECIALIST,
+                      3, "Wrong citizens category %d (max. "
+                      macro2str(CITIZEN_SPECIALIST) ")", 0);
+  LUASCRIPT_CHECK_ARG(L, level >= FEELING_BASE && level < FEELING_LAST, 4,
+                      "Wrong feeling level %d (max. "
+                      macro2str(FEELING_FINAL) ")", 0);
+  return
+    pcity->feel[(enum citizen_category) cat][(enum citizen_feeling) level];
+}
+
+/*****************************************************************************
+  Return number of city supported units
+*****************************************************************************/
+int api_methods_city_supported_units_number(lua_State *L, City *pcity)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);
+
+  return unit_list_size(pcity->units_supported);
+}
 
 /*****************************************************************************
   Return TRUE iff city has building
@@ -134,6 +240,34 @@ bool api_methods_city_has_building(lua_State *L, City *pcity,
   LUASCRIPT_CHECK_ARG_NIL(L, building, 3, Building_Type, FALSE);
 
   return city_has_building(pcity, building);
+}
+
+/*****************************************************************************
+  Returns a building or a unit that the city is working on now, or nil
+*****************************************************************************/
+lua_Object api_methods_city_production(lua_State *L, City *pcity)
+{
+  LUASCRIPT_CHECK_STATE(L, 0); /* no state, no top */
+  /* LUASCRIPT_CHECK_SELF(L, lua_gettop(L)<-nil); */
+  if (!pcity) {
+    luascript_arg_error(L, 2, "got 'nil' for self");
+    lua_pushnil(L); 
+  } else {
+    switch (pcity->production.kind) {
+    case VUT_IMPROVEMENT:
+      tolua_pushusertype(L, pcity->production.value.building,
+                         "Building_Type");
+      break;
+    case VUT_UTYPE:
+      tolua_pushusertype(L, pcity->production.value.utype, "Unit_Type");
+      break;
+    default:
+      /* should not be here, except very strange cases */
+      log_error("City builds some wrong kind %d", pcity->production.kind);
+      lua_pushnil(L);
+    }
+  }
+  return lua_gettop(L);
 }
 
 /*****************************************************************************
@@ -359,6 +493,17 @@ int api_methods_player_number(lua_State *L, Player *pplayer)
   LUASCRIPT_CHECK_SELF(L, pplayer, -1);
 
   return player_number(pplayer);
+}
+
+/*****************************************************************************
+  Return player team number
+*****************************************************************************/
+int api_methods_player_team_number(lua_State *L, Player *pplayer)
+{
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, pplayer, FALSE);
+
+  return team_number(pplayer->team);
 }
 
 /*****************************************************************************
@@ -647,6 +792,18 @@ int api_methods_tile_map_y(lua_State *L, Tile *ptile)
 }
 
 /*****************************************************************************
+  Return real map distance between tiles 1 and 2
+*****************************************************************************/
+int api_methods_tile_map_distance(lua_State *L, Tile *ptile1, Tile *ptile2)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, ptile1, 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, ptile2, 2, Tile, 0);
+
+  return real_map_distance(ptile1, ptile2);
+}
+
+/*****************************************************************************
   Return City on ptile, else NULL
 *****************************************************************************/
 City *api_methods_tile_city(lua_State *L, Tile *ptile)
@@ -759,6 +916,48 @@ int api_methods_tile_num_units(lua_State *L, Tile *ptile)
   LUASCRIPT_CHECK_SELF(L, ptile, 0);
 
   return unit_list_size(ptile->units);
+}
+
+/****************************************************************//*********
+  Return tile's output of otype, for the city if it is specified.
+***************************************************************************/
+int api_methods_tile_output(lua_State *L, Tile *self, int otype, City *city)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, self, 0);
+  LUASCRIPT_CHECK_ARG(L, otype >= O_FOOD && otype < O_LAST,
+                      3, "Wrong output type", 0);
+  
+  return city ? city_tile_output_now(city, self, otype)
+              : city_tile_output(NULL, self, FALSE, otype);
+}
+
+/****************************************************************//*********
+  Return tile's output of otype, for the city if it is specified and
+  for the case it is (not) celebrating
+***************************************************************************/
+int api_methods_tile_output_full(lua_State *L, Tile *self, int otype,
+                                 City *city, bool celeb)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, self, 0);
+  LUASCRIPT_CHECK_ARG(L, otype >= O_FOOD && otype < O_LAST,
+                      3, "Wrong output type", 0);
+  
+  return city_tile_output(city, self, celeb, otype);
+}
+
+/*****************************************************************************
+  Return the distance to the nearest gov. center of plr, or -1 if none.
+  FIXME: move the calculator to a common header file
+*****************************************************************************/
+int api_methods_tile_gcdist(lua_State *L, Tile *ptile, Player *plr)
+{
+  LUASCRIPT_CHECK_STATE(L, -1);
+  LUASCRIPT_CHECK_SELF(L, ptile, -1);
+  LUASCRIPT_CHECK_ARG_NIL(L, plr, 3, Player, -1);
+
+ return tile_gcdist(ptile, plr);
 }
 
 /*****************************************************************************
@@ -881,6 +1080,22 @@ Direction api_methods_unit_orientation_get(lua_State *L, Unit *punit)
 }
 
 /*****************************************************************************
+  Return current index of punit's orders (starting at 1), nil if no orders
+*****************************************************************************/
+lua_Object api_methods_unit_orders_index(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, punit, 0);
+  
+  if (unit_has_orders(punit)) {
+    lua_pushinteger(L, punit->orders.index + 1);
+  } else {
+    lua_pushnil(L);
+  }
+  return lua_gettop(L);
+}
+
+/*****************************************************************************
   Return Unit that transports punit, if any.
 *****************************************************************************/
 Unit *api_methods_unit_transporter(lua_State *L, Unit *punit)
@@ -900,6 +1115,61 @@ Unit_List_Link *api_methods_private_unit_cargo_list_head(lua_State *L,
   LUASCRIPT_CHECK_STATE(L, NULL);
   LUASCRIPT_CHECK_SELF(L, punit, NULL);
   return unit_list_head(punit->transporting);
+}
+
+/*****************************************************************************
+  Get punit full mp from all known bonuses
+*****************************************************************************/
+int api_methods_unit_move_rate(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, -1);
+  LUASCRIPT_CHECK_SELF(L, punit, -1);
+
+  return unit_move_rate(punit);
+}
+
+/*****************************************************************************
+  Get punit full work speed (does not check if it has any mp)
+*****************************************************************************/
+int api_methods_unit_activity_rate(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, -1);
+  LUASCRIPT_CHECK_SELF(L, punit, -1);
+
+  return get_activity_rate(punit);
+}
+
+/*****************************************************************************
+  Get unit moves
+*****************************************************************************/
+int api_methods_unit_moves_left_get(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, -1);
+  LUASCRIPT_CHECK_SELF(L, punit, -1);
+
+  return punit->moves_left;
+}
+
+/*****************************************************************************
+  Get unit veteranship rank
+*****************************************************************************/
+int api_methods_unit_vet_get(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, -1);
+  LUASCRIPT_CHECK_ARG_NIL(L, punit, 2, Unit, -1);
+
+  return punit->veteran;
+}
+
+/********************************************************************//*******
+  Returns current unit activity name
+*****************************************************************************/
+const char *api_methods_unit_activity(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, punit, NULL);
+  
+  return unit_activity_name(punit->activity);
 }
 
 /*****************************************************************************
