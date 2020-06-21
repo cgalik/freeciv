@@ -4411,6 +4411,32 @@ void handle_server_setting_enum
       }
     }
   }
+  /* Set up trade styles from the options for client calculators.
+   * This is not a hard part of Freeciv protocol and may be incompatible
+   * with some servers. Untranslated names are what is tested. */
+  if (!strcmp("trade_revenue_style", option_name(poption))) {
+    if (!strcmp("CLASSIC", packet->support_names[packet->val])) {
+      game.server.trade_revenue_style = TRS_CLASSIC;
+    } else if (!strcmp("SIMPLE", packet->support_names[packet->val])) {
+      game.server.trade_revenue_style = TRS_SIMPLE;
+    } else {
+      game.server.trade_revenue_style = GAME_DEFAULT_TRADE_REVENUE_STYLE;
+      output_window_printf(ftc_chat_luaconsole, "Server uses unknown "
+                           "trade revenue style option %s, set to default",
+                           packet->support_names[packet->val]);
+    }
+  } else if (!strcmp("caravan_bonus_style", option_name(poption))) {
+    if (!strcmp("CLASSIC", packet->support_names[packet->val])) {
+      game.server.caravan_bonus_style = CBS_CLASSIC;
+    } else if (!strcmp("LOGARITHMIC", packet->support_names[packet->val])) {
+      game.server.caravan_bonus_style = CBS_LOGARITHMIC;
+    } else {
+      game.server.caravan_bonus_style = GAME_DEFAULT_CARAVAN_BONUS_STYLE;
+      output_window_printf(ftc_chat_luaconsole, "Server uses unknown "
+                           "caravan bonus style option %s, set to default",
+                           packet->support_names[packet->val]);
+    }
+  }
 
   handle_server_setting_common(psoption, packet);
 }

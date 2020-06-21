@@ -27,6 +27,7 @@
 #include "movement.h"
 #include "nation.h"
 #include "research.h"
+#include "specialist.h"
 #include "tech.h"
 #include "terrain.h"
 #include "tile.h"
@@ -43,6 +44,7 @@
 #define macro2str(__macro__) macro2str_base(__macro__)
 
 static int tile_gcdist(const struct tile *ptile, const struct player *plr);
+static Output_type_id luao2otype(lua_State *L, lua_Object oty);
 /* ]] */
 
 static /* FIXME: Move this to some common C file [[ */
@@ -67,7 +69,39 @@ int tile_gcdist(const struct tile *ptile, const struct player *plr)
   }
   return FC_INFINITY == res ? -1 : res;
 }
+
+static Output_type_id luao2otype(lua_State *L, lua_Object oty)
+{
+  /* LUASCRIPT_CHECK_STATE(L, O_LAST); Already checked */
+  switch (lua_type(L, oty)) {
+  case LUA_TNUMBER:
+    return lua_tointeger(L, oty);
+  case LUA_TSTRING:
+    return output_type_by_identifier(lua_tostring(L, oty));
+  default:
+    return O_LAST;
+  }
+}
 /* ]] */
+
+#define CITY_OUTPUTF(fname)                                              \
+int api_methods_city_##fname(lua_State *L, City *pcity, lua_Object otype)\
+{                                                                        \
+  Output_type_id oty = luao2otype(L, otype);                             \
+  LUASCRIPT_CHECK_STATE(L, 0);                                           \
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);                                     \
+  LUASCRIPT_CHECK_ARG(L, oty >= O_FOOD && oty < O_LAST, 3,               \
+                      "Wrong output type", 0);                           \
+  return pcity->fname[oty];                                              \
+}
+
+CITY_OUTPUTF(surplus) /* Final surplus in each category. */
+CITY_OUTPUTF(waste) /* Waste/corruption in each category. */
+CITY_OUTPUTF(unhappy_penalty) /* Penalty from unhappy cities. */
+CITY_OUTPUTF(prod) /* Production is total minus waste and penalty. */
+CITY_OUTPUTF(citizen_base) /* Base production from citizens. */
+CITY_OUTPUTF(usage) /* Amount of each resource being used. */
+#undef CITY_OUTPUTF
 
 /*****************************************************************************
   Return the current turn.
@@ -201,6 +235,120 @@ api_methods_city_waste_level_ostr(lua_State *L, City *pcity,
 }
 
 /*********************************************************************//***
+  Pushes a table of pcity nationalities {[Player] = int},
+  or nil if nationalities are off
+**************************************************************************/
+lua_Object api_methods_city_nationality(lua_State *L, City *pcity)
+{
+  int t;
+  
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);
+
+  if (!game.info.citizen_nationality) {
+    lua_pushnil(L);
+    return lua_gettop(L);
+  }
+
+  lua_newtable(L);
+  t = lua_gettop(L);
+  citizens_iterate(pcity, psl, num) {
+    tolua_pushusertype(L, player_slot_get_player(psl), "Player");
+    lua_pushinteger(L, num);
+    lua_settable(L, t);
+  } citizens_iterate_end;
+
+  return t;
+}
+
+/**************************************************************************
+  Return number of specialists by rule name
+**************************************************************************/
+int api_methods_city_specialists(lua_State *L, City *pcity,
+                                 const char *spec)
+{
+  struct specialist *specs = specialist_by_rule_name(spec);
+  
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);
+  LUASCRIPT_CHECK_ARG(L, NULL != specs, 3, "Wrong specialist rule name", 0);
+  
+  return pcity->specialists[specs->item_number];
+}
+
+/*********************************************************************//***
+  Returns if a city is virtual (can be got from City:trade_routes_iterate()
+  etc. in the client). Such virtual cities contain few useful info.
+**************************************************************************/
+bool api_methods_city_is_virtual(lua_State *L, City *pcity)
+{
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, pcity, FALSE);
+  
+  return city_is_virtual(pcity);
+}
+
+/*********************************************************************//***
+  Returns current number of established trade routes
+**************************************************************************/
+int api_methods_city_traderoutes_number(lua_State *L, City *pcity)
+{
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, pcity, FALSE);
+  
+  return city_num_trade_routes(pcity);
+}
+
+/*********************************************************************//***
+  Returns a table {[trade_partner_city] = route_output} of the city.
+  In client, unknown cities are virtual.
+**************************************************************************/
+lua_Object api_methods_city_trade_routes(lua_State *L, City *pcity)
+{
+  lua_Object table;
+
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);
+  
+  lua_createtable(L, 0, city_num_trade_routes(pcity));
+  table = lua_gettop(L);
+  
+  trade_routes_iterate(pcity, tcity) {
+    tolua_pushusertype(L, tcity, "City");
+    lua_pushinteger(L, pcity->trade_value[_itcity]);
+    lua_settable(L, table);
+  } trade_routes_iterate_end;
+
+  return table;
+}
+
+
+/*********************************************************************//***
+  Returns how much trade pcity has or may have per turn trading with tcity
+**************************************************************************/
+int api_methods_city_trade_with(lua_State *L, City *pcity, City *tcity)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, tcity, 3, city, 0);
+
+  return trade_between_cities(pcity, tcity);
+}
+
+/*********************************************************************//***
+  Returns one-time bonus of a caravan from pcity acting to tcity,
+  if or if not the route is newly established
+**************************************************************************/
+int api_methods_caravan_bonus(lua_State *L, City *pcity, City *tcity,
+                              bool establish)
+{
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, tcity, 3, city, 0);
+
+  return get_caravan_enter_city_trade_bonus(pcity, tcity, establish);
+}
+
+/*********************************************************************//***
   Tells how many citizens are as happy as cat at given level
 **************************************************************************/
 int api_methods_city_happy_count(lua_State *L, City *pcity,
@@ -227,6 +375,18 @@ int api_methods_city_supported_units_number(lua_State *L, City *pcity)
   LUASCRIPT_CHECK_SELF(L, pcity, 0);
 
   return unit_list_size(pcity->units_supported);
+}
+
+/*****************************************************************************
+  Return list head for units supported by pcity
+*****************************************************************************/
+Unit_List_Link *api_methods_private_city_supported_list_head(lua_State *L,
+                                                             City *pcity)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, pcity, NULL);
+
+  return unit_list_head(pcity->units_supported);
 }
 
 /*****************************************************************************
@@ -562,6 +722,24 @@ int api_methods_player_culture_get(lua_State *L, Player *pplayer)
   LUASCRIPT_CHECK_SELF(L, pplayer, 0);
 
   return player_culture(pplayer);
+}
+
+/*****************************************************************************
+  Return TRUE if players have this diplomatic relation
+*****************************************************************************/
+bool api_methods_player_dipl_rel(lua_State *L, Player *self,
+                                 Player *other, const char *rel)
+{
+  int dr = diplrel_by_rule_name(rel);
+
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, self, FALSE);
+  LUASCRIPT_CHECK_ARG_NIL(L, other, 3, player, FALSE);
+  LUASCRIPT_CHECK_ARG_NIL(L, rel, 4, string, FALSE);
+  LUASCRIPT_CHECK_ARG(L, dr != diplrel_other_invalid(), 4,
+                      "Wrong diplomatic state", FALSE);
+
+  return is_diplrel_between(self, other, dr);
 }
 
 /*****************************************************************************
@@ -1077,6 +1255,68 @@ Direction api_methods_unit_orientation_get(lua_State *L, Unit *punit)
   LUASCRIPT_CHECK_ARG_NIL(L, punit, 2, Unit, direction8_invalid());
 
   return punit->facing;
+}
+
+/*****************************************************************************
+  Get unit activity target rule name
+*****************************************************************************/
+const char *api_methods_unit_activity_target(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, punit, NULL);
+
+  if (punit->activity_target) {
+    return extra_rule_name(punit->activity_target);
+  } else {
+    return NULL;
+  }
+}
+
+/*****************************************************************************
+  Return three values: orders, bool repeat and bool vigilant
+  {{order=int, dir=Direction, activity=string, target=string}}
+*****************************************************************************/
+lua_Object api_methods_unit_orders(lua_State *L, Unit *punit,
+                                   bool *repeat, bool *vigilant)
+{
+  int t, o;
+  void* tolua_obj;
+  
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, punit, 0);
+  
+  if (!unit_has_orders(punit)) {
+    lua_pushnil(L);
+    return lua_gettop(L); /* boolean values are FALSE by tolua_game.pkg */
+  }
+  *repeat = punit->orders.repeat;
+  *vigilant = punit->orders.vigilant;
+  lua_createtable(L, punit->orders.length, 0);
+  t = lua_gettop(L);
+  for (int i = 0; i < punit->orders.length; i++) {
+    lua_pushinteger(L, i + 1);
+    lua_createtable(L, 0, 2); /* We mostly just move around */
+    o = lua_gettop(L);
+    lua_pushinteger(L, punit->orders.list[i].order);
+    lua_setfield(L, o, "order");
+    if (is_valid_dir(punit->orders.list[i].dir)) {
+      tolua_obj = tolua_copy(L, (void*) &punit->orders.list[i].dir,
+                             sizeof(Direction));
+      tolua_pushusertype(L, tolua_clone(L, tolua_obj, NULL), "Direction");
+      lua_setfield(L, o, "dir");
+    }
+    if (unit_activity_is_valid(punit->orders.list[i].activity)) {
+      lua_pushstring(L, unit_activity_name(punit->orders.list[i].activity));
+      lua_setfield(L, o, "activity");
+    }
+    tolua_obj = (void *) extra_by_number(punit->orders.list[i].target);
+    if (tolua_obj) {
+      lua_pushstring(L, extra_rule_name((struct extra_type *) tolua_obj));
+      lua_setfield(L, o, "target");
+    }
+    lua_settable(L, t);
+  }
+  return t;
 }
 
 /*****************************************************************************

@@ -30,6 +30,7 @@ extern "C" {
 #include "game.h"
 #include "government.h"
 #include "improvement.h"
+#include "map.h"
 #include "nation.h"
 #include "player.h"
 #include "tech.h"
@@ -58,6 +59,7 @@ typedef enum direction8 Direction;
 typedef struct disaster_type Disaster;
 typedef struct achievement Achievement;
 typedef struct action Action;
+typedef struct terrain_misc Terrain_Misc; /* Not for use in API functions */
 
 typedef void Nonexistent;
 

@@ -31,6 +31,9 @@ $#include "api_game_find.h"
 $#include "api_game_methods.h"
 $#include "luascript_types.h"
 
+/* just to simply get the default value */
+$#define api_HCTR_PT (!have_cities_trade_route(pcity, tcity))
+
 /* Classes. */
 struct Player {
   const char *name;
@@ -135,6 +138,18 @@ struct Unit_List_Link {
 struct City_List_Link {
 };
 
+struct Terrain_Misc {
+  int ocean_reclaim_requirement_pct;
+  int land_channel_requirement_pct;
+  int terrain_thaw_requirement_pct;
+  int terrain_freeze_requirement_pct;
+  int lake_max_size;
+  int min_start_native_area;
+  int move_fragments;
+  int igter_cost;
+  bool pythagorean_diagonal;
+};
+
 /* Constants */
 module FEELING {
   enum { /* citizen_feeling */
@@ -168,11 +183,49 @@ module OUTPUT {
   };
 }
 
+module ORDER {
+  enum { /* unit_orders */
+    ORDER_MOVE @ MOVE,
+    ORDER_ACTIVITY @ ACTIVITY,
+    ORDER_FULL_MP @ FULL_MP,
+    ORDER_BUILD_CITY @ BUILD_CITY,
+    ORDER_DISBAND @ DISBAND,
+    ORDER_BUILD_WONDER @ BUILD_WONDER,
+    ORDER_TRADE_ROUTE @ TRADE_ROUTE,
+    ORDER_HOMECITY @ HOMECITY,
+    ORDER_ACTION_MOVE @ ACTION_MOVE
+  };
+}
+
 /* Module Game */
 module game {
   int api_methods_game_turn
     @ turn (lua_State *L);
+  extern Terrain_Misc terrain_control;
 }
+
+$[
+  -- More easy constants access
+  do
+    local game_mt = getmetatable(game);
+    local game_idx = game_mt.__index
+    local tc = game.terrain_control;
+    game_mt.__index = function(self, field)
+      local gamer = game_idx(self, field)
+      if nil ~= gamer then
+        return gamer
+      else
+        if field == 'SINGLE_MOVE' then
+          return tc.move_fragments
+        elseif field == 'MOVE_COST_IGTER' then
+          return tc.igter_cost
+        else
+          return tc[field] --delegation
+        end
+      end
+    end
+  end
+$]
 
 /* Module Player. */
 module Player {
@@ -202,6 +255,8 @@ module Player {
 
   int api_methods_player_culture_get
     @ culture(lua_State *L, Player *self);
+  bool api_methods_player_dipl_rel
+    @ dipl_rel (lua_State *L, Player *self, Player *other, const char *rel);
 }
 
 module methods_private {
@@ -273,6 +328,21 @@ module City {
   int api_methods_city_happy_count
     @ happy_count(lua_State *L, City *pcity,
                   int cat = CITIZEN_HAPPY, int level = FEELING_FINAL);
+  lua_Object api_methods_city_nationality
+    @ nationalities (lua_State *L, City *pcity);
+  int api_methods_city_specialists
+    @ specialist (lua_State *L, City *pcity, const char *spec);
+  bool api_methods_city_is_virtual
+    @ is_virtual (lua_State *L, City *pcity);
+  int api_methods_city_traderoutes_number
+    @ traderoutes_number (lua_State *L, City *pcity);
+  lua_Object api_methods_city_trade_routes
+    @ trade_routes (lua_State *L, City *pcity);
+  int api_methods_city_trade_with
+    @ trade_with (lua_State *L, City *pcity, City *tcity);
+  int api_methods_caravan_bonus
+    @ caravan_bonus (lua_State *L, City *pcity, City *tcity,
+                     bool establish = api_HCTR_PT);
 
   int api_methods_city_culture_get
     @ culture(lua_State *L, City *self);
@@ -287,6 +357,25 @@ module City {
     @ is_gov_center(lua_State *L, City *self);
   bool api_methods_is_capital
     @ is_capital(lua_State *L, City *self);
+  int api_methods_city_surplus
+    @ surplus (lua_State *L, City *pcity, lua_Object otype);
+  int api_methods_city_waste
+    @ waste (lua_State *L, City *pcity, lua_Object otype);
+  int api_methods_city_unhappy_penalty
+    @ unhappy_penalty (lua_State *L, City *pcity, lua_Object otype);
+  int api_methods_city_prod
+    @ prod (lua_State *L, City *pcity, lua_Object otype);
+  int api_methods_city_citizen_base
+    @ citizen_base (lua_State *L, City *pcity, lua_Object otype);
+  int api_methods_city_usage
+    @ usage (lua_State *L, City *pcity, lua_Object otype);
+}
+
+module methods_private {
+  module City {
+    Unit_List_Link *api_methods_private_city_supported_list_head
+      @ supported_list_head (lua_State *L, City *pcity);
+  }
 }
 
 $[
@@ -310,6 +399,8 @@ module Unit {
       @ veteran(lua_State *L, Unit *punit);
     const char *api_methods_unit_activity
       @ activity(lua_State *L, Unit *punit);
+    const char *api_methods_unit_activity_target
+      @ activity_target (lua_State *L, Unit *punit);
     lua_Object api_methods_unit_orders_index
       @ orders_index(lua_State *L, Unit *punit);
   }
@@ -324,6 +415,9 @@ module Unit {
     @ move_rate(lua_State *L, Unit *punit);
   int api_methods_unit_activity_rate
     @ activity_rate(lua_State *L, Unit *punit);
+  lua_Object api_methods_unit_orders
+    @ orders (lua_State *L, Unit *punit,
+              bool *repeat = FALSE, bool *vigilant = FALSE);
 }
 
 module methods_private {
@@ -639,6 +733,12 @@ $[
 -- ***************************************************************************
 do
   local private = methods_private
+  local Pulh = private.Player.unit_list_head
+  local Pclh = private.Player.city_list_head
+  local Cslh = private.City.supported_list_head
+  local Tulh = private.Tile.unit_list_head
+  local Uclh = private.Unit.cargo_list_head
+  private = nil -- don't save the table for all runtime
 
   -- Iterate over the values of 'array' in order:
   -- array[1], array[2], array[3], etc.
@@ -663,22 +763,32 @@ do
 
   -- Safe iteration over all units that belong to Player
   function Player:units_iterate()
-    return safe_iterate_list(private.Player.unit_list_head(self))
+    return safe_iterate_list(Pulh(self))
   end
 
   -- Safe iteration over all cities that belong to Player
   function Player:cities_iterate()
-    return safe_iterate_list(private.Player.city_list_head(self))
+    return safe_iterate_list(Pclh(self))
+  end
+
+  -- Safe iteration over all units that are supported by City
+  function City:supported_iterate()
+    return safe_iterate_list(Cslh(self))
   end
 
   -- Safe iteration over the units on Tile
   function Tile:units_iterate()
-    return safe_iterate_list(private.Tile.unit_list_head(self))
+    return safe_iterate_list(Tulh(self))
   end
 
   -- Safe iteration over the units transported by Unit
   function Unit:cargo_iterate()
-    return safe_iterate_list(private.Unit.cargo_list_head(self))
+    return safe_iterate_list(Uclh(self))
+  end
+  
+  -- Safe iterator over city trade partners, second value is trade value
+  function City:trade_routes_iterate()
+    return pairs(self:trade_routes())
   end
 end
 

@@ -46,6 +46,17 @@ bool api_methods_city_has_building(lua_State *L, City *pcity,
                                    Building_Type *building);
 lua_Object api_methods_city_production(lua_State *L, City *pcity);
 int api_methods_city_supported_units_number(lua_State *L, City *pcity);
+Unit_List_Link *api_methods_private_city_supported_list_head(lua_State *L,
+                                                             City *pcity);
+lua_Object api_methods_city_nationality(lua_State *L, City *pcity);
+int api_methods_city_specialists(lua_State *L, City *pcity,
+                                 const char *spec);
+bool api_methods_city_is_virtual(lua_State *L, City *pcity);
+int api_methods_city_traderoutes_number(lua_State *L, City *pcity);
+lua_Object api_methods_city_trade_routes(lua_State *L, City *pcity);
+int api_methods_city_trade_with(lua_State *L, City *pcity, City *tcity);
+int api_methods_caravan_bonus(lua_State *L, City *pcity, City *tcity,
+                              bool establish);
 int api_methods_city_happy_count(lua_State *L, City *pcity,
                                  int cat, int level);
 int api_methods_city_map_sq_radius(lua_State *L, City *pcity);
@@ -65,6 +76,14 @@ double api_methods_city_waste_level(lua_State *L, City *pcity,
 double
 api_methods_city_waste_level_ostr(lua_State *L, City *pcity,
                                   const char* otn, lua_Object gcd);
+int api_methods_city_surplus(lua_State *L, City *pcity, lua_Object otype);
+int api_methods_city_waste(lua_State *L, City *pcity, lua_Object otype);
+int api_methods_city_unhappy_penalty(lua_State *L, City *pcity,
+                                     lua_Object otype);
+int api_methods_city_prod(lua_State *L, City *pcity, lua_Object otype);
+int api_methods_city_citizen_base(lua_State *L, City *pcity,
+                                  lua_Object otype);
+int api_methods_city_usage(lua_State *L, City *pcity, lua_Object otype);
 
 /* Government */
 const char *api_methods_government_rule_name(lua_State *L,
@@ -99,6 +118,8 @@ Unit_List_Link *api_methods_private_player_unit_list_head(lua_State *L,
 City_List_Link *api_methods_private_player_city_list_head(lua_State *L,
                                                           Player *pplayer);
 int api_methods_player_culture_get(lua_State *L, Player *pplayer);
+bool api_methods_player_dipl_rel(lua_State *L, Player *self,
+                                 Player *other, const char *rel);
 
 /* Tech Type */
 const char *api_methods_tech_type_rule_name(lua_State *L, Tech_Type *ptech);
@@ -160,6 +181,9 @@ Unit_List_Link *api_methods_private_unit_cargo_list_head(lua_State *L,
 int api_methods_unit_moves_left_get(lua_State *L, Unit *punit);
 int api_methods_unit_vet_get(lua_State *L, Unit *punit);
 const char *api_methods_unit_activity(lua_State *L, Unit *punit);
+const char *api_methods_unit_activity_target(lua_State *L, Unit *punit);
+lua_Object api_methods_unit_orders(lua_State *L, Unit *punit,
+                                   bool *repeat, bool *vigilant);
 lua_Object api_methods_unit_orders_index(lua_State *L, Unit *punit);
 int api_methods_unit_move_rate(lua_State *L, Unit *punit);
 int api_methods_unit_activity_rate(lua_State *L, Unit *punit);
