@@ -222,8 +222,22 @@ bool player_has_real_embassy(const struct player *pplayer,
 bool player_has_embassy_from_effect(const struct player *pplayer,
                                     const struct player *pplayer2)
 {
-  return (get_player_bonus(pplayer, EFT_HAVE_EMBASSIES) > 0
-          && !is_barbarian(pplayer2));
+  if (is_barbarian(pplayer2)) {
+    return FALSE;
+  }
+  if (get_player_bonus(pplayer, EFT_HAVE_EMBASSIES) > 0) {
+    return TRUE;
+  }
+  
+  player_list_iterate(team_members(pplayer->team), teammate) {
+    if (teammate != pplayer && teammate->is_alive
+        && (get_player_bonus(teammate, EFT_HAVE_EMBASSIES) > 0
+            || player_has_real_embassy(teammate, pplayer2))) {
+      return TRUE;
+    }
+  } player_list_iterate_end;
+
+  return FALSE;
 }
 
 /****************************************************************************

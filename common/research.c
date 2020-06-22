@@ -829,7 +829,10 @@ int research_total_bulbs_required(const struct research *presearch,
         }
 
         research_players_iterate(presearch, pplayer) {
-          if (player_has_embassy(pplayer, aplayer)) {
+          /* Embassies via allies don't help here */
+          if (player_has_real_embassy(pplayer, aplayer)
+              || (!is_barbarian(aplayer)
+                  && get_player_bonus(pplayer, EFT_HAVE_EMBASSIES) > 0)) {
             players_with_tech_and_embassy++;
             break;
           }
