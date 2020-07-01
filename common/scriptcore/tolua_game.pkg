@@ -682,6 +682,12 @@ module find {
     @ nonexistent (lua_State *L);
 }
 
+$[
+function find.terrain_misc()
+  return game.terrain_control
+end
+$]
+
 module E {
   /* Notify events module is exported by api_specenum */
 }
