@@ -25,6 +25,15 @@ struct lua_State;
 
 void api_client_chat_base(lua_State *L, const char *msg);
 
+Player *api_client_player(lua_State *L);
+void api_client_center(lua_State *L, Tile* tile);
+const char *api_client_state(lua_State *L);
+const char *api_client_tileset_name(lua_State *L);
+lua_Object api_client_option_get(lua_State *L, const char *name,
+                                 bool is_server_opt);
+const char* api_client_option_next(lua_State *L, const char *name,
+                                   bool is_server_opt);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

@@ -45,3 +45,64 @@ function chat.msg(fmt, ...)
 end
 
 $]
+
+/* client module */
+module client {
+  Player *api_client_player @ player(lua_State *L);
+  void api_client_center @ center(lua_State *L, Tile* tile);
+  const char *api_client_state @ state(lua_State *L);
+  const char *api_client_tileset_name @ tileset_name(lua_State *L);
+  lua_Object api_client_option_get
+    @ option (lua_State *L, const char *name, bool is_server_opt);
+  const char* api_client_option_next
+    @ option_next (lua_State *L, const char *name, bool is_server_opt);
+}
+
+$[
+--no () for client.player etc., pseudo-tables for options
+--Currently, client has no metatable, but ever may get, thus so polymorphic
+do
+  local cli_mt = getmetatable(client)
+  local clindex
+  local oo = {state = client.state,
+    tileset_name = client.tileset_name,
+    player = client.player}
+  local opt, sopt, cliopt, clinext
+    = {}, {}, client.option, client.option_next
+  if cli_mt then
+    clindex = cli_mt.__index
+  else
+    cli_mt = {}
+    setmetatable(client, cli_mt)
+  end
+  for k, _ in pairs(oo) do client[k] = nil end --access via __index
+  if not clindex then
+    clindex = function(t, k) return rawget(t, k) end
+  end
+  local function smtos(o, is_srv)
+    setmetatable(o, {
+      __index = function(t, n)
+        return cliopt(n, is_srv)
+      end,
+      __pairs = function(t)
+        return function(t1, i)
+            local n = clinext(i, is_srv)
+            return n, t1[n]
+          end, t, nil
+      end
+    })
+  end
+  smtos(opt, false)
+  smtos(sopt, true)
+  cli_mt.__index = function(c, n)
+    if oo[n] then
+      return oo[n]()
+    elseif n == "option" then
+      return opt
+    else
+      return clindex(c, n)
+    end
+  end
+  game.server_option = sopt
+end
+$]
