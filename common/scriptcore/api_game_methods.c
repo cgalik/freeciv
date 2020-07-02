@@ -969,8 +969,21 @@ int api_methods_tile_map_y(lua_State *L, Tile *ptile)
   return index_to_map_pos_y(tile_index(ptile));
 }
 
-/*****************************************************************************
-  Return real map distance between tiles 1 and 2
+/***********************************************************************//****
+  Return real map distance (diagonal=1) between tiles 1 and 2
+*****************************************************************************/
+int api_methods_tile_real_map_distance(lua_State *L,
+                                       Tile *ptile1, Tile *ptile2)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, ptile1, 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, ptile2, 2, Tile, 0);
+
+  return real_map_distance(ptile1, ptile2);
+}
+
+/***********************************************************************//****
+  Return Manhattan map distance (diagonal=2) between tiles 1 and 2
 *****************************************************************************/
 int api_methods_tile_map_distance(lua_State *L, Tile *ptile1, Tile *ptile2)
 {
@@ -978,7 +991,7 @@ int api_methods_tile_map_distance(lua_State *L, Tile *ptile1, Tile *ptile2)
   LUASCRIPT_CHECK_SELF(L, ptile1, 0);
   LUASCRIPT_CHECK_ARG_NIL(L, ptile2, 2, Tile, 0);
 
-  return real_map_distance(ptile1, ptile2);
+  return map_distance(ptile1, ptile2);
 }
 
 /*****************************************************************************

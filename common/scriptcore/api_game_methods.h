@@ -159,6 +159,8 @@ bool api_methods_tile_has_base(lua_State *L, Tile *ptile, const char *name);
 bool api_methods_tile_has_road(lua_State *L, Tile *ptile, const char *name);
 int api_methods_tile_num_units(lua_State *L, Tile *ptile);
 int api_methods_tile_sq_distance(lua_State *L, Tile *ptile1, Tile *ptile2);
+int api_methods_tile_real_map_distance(lua_State *L,
+                                       Tile *ptile1, Tile *ptile2);
 int api_methods_tile_map_distance(lua_State *L, Tile *ptile1, Tile *ptile2);
 int api_methods_tile_output(lua_State *L, Tile *self, int otype, City *city);
 int api_methods_tile_output_full(lua_State *L, Tile *self, int otype,

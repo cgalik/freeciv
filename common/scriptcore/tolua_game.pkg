@@ -466,9 +466,10 @@ module Tile {
     @ num_units (lua_State *L, Tile *self);
   int api_methods_tile_sq_distance
     @ sq_distance (lua_State *L, Tile *self, Tile *other);
+  int api_methods_tile_real_map_distance
+    @ real_map_distance(lua_State *L, Tile *ptile1, Tile *ptile2);
   int api_methods_tile_map_distance
     @ map_distance(lua_State *L, Tile *ptile1, Tile *ptile2);
-  
   int api_methods_tile_output
     @ output (lua_State *L, Tile *self, int otype,
               City *city = NULL);
