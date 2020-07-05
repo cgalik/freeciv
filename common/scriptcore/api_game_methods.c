@@ -1307,6 +1307,8 @@ lua_Object api_methods_unit_orders(lua_State *L, Unit *punit,
   lua_createtable(L, punit->orders.length, 0);
   t = lua_gettop(L);
   for (int i = 0; i < punit->orders.length; i++) {
+    int tgt = punit->orders.list[i].target;
+
     lua_pushinteger(L, i + 1);
     lua_createtable(L, 0, 2); /* We mostly just move around */
     o = lua_gettop(L);
@@ -1322,10 +1324,12 @@ lua_Object api_methods_unit_orders(lua_State *L, Unit *punit,
       lua_pushstring(L, unit_activity_name(punit->orders.list[i].activity));
       lua_setfield(L, o, "activity");
     }
-    tolua_obj = (void *) extra_by_number(punit->orders.list[i].target);
-    if (tolua_obj) {
-      lua_pushstring(L, extra_rule_name((struct extra_type *) tolua_obj));
-      lua_setfield(L, o, "target");
+    if (tgt >= 0 && tgt < MAX_EXTRA_TYPES) { /* assertion */
+      tolua_obj = (void *) extra_by_number(tgt);
+      if (tolua_obj) {
+        lua_pushstring(L, extra_rule_name((struct extra_type *) tolua_obj));
+        lua_setfield(L, o, "target");
+      }
     }
     lua_settable(L, t);
   }

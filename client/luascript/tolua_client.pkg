@@ -50,12 +50,28 @@ $]
 module client {
   Player *api_client_player @ player(lua_State *L);
   void api_client_center @ center(lua_State *L, Tile* tile);
+  void api_client_center_coords
+    @ center(lua_State *L, int x, int y);
   const char *api_client_state @ state(lua_State *L);
   const char *api_client_tileset_name @ tileset_name(lua_State *L);
   lua_Object api_client_option_get
     @ option (lua_State *L, const char *name, bool is_server_opt);
   const char* api_client_option_next
     @ option_next (lua_State *L, const char *name, bool is_server_opt);
+}
+
+/* focus module */
+module focus {
+  void api_client_unit_focus_add @ add(lua_State *L, Unit *punit);
+  void api_client_unit_focus_remove @ remove (lua_State *L, Unit *punit);
+  bool api_client_unit_is_in_focus @ contains (lua_State *L, Unit *punit);
+  int api_client_num_units_in_focus @ number(lua_State *L);
+}
+
+module methods_private {
+  module focus {
+    Unit_List_Link *api_client_private_focus_head @ head(lua_State *L);
+  }
 }
 
 $[
@@ -104,5 +120,96 @@ do
     end
   end
   game.server_option = sopt
+  
+  -- focus iteration
+  local focus_head = methods_private.focus.head
+  function focus.list() -- Note: units can be destroyed afterwards
+    local list, link = {}, focus_head()
+    while link do
+      table.insert(list, link:data())
+      link = link:next()
+    end
+    return list
+  end
+  -- The iterator can be called between pakets processings that will
+  -- remove the units, so make it safe. TODO: client remove units correctly
+  function focus.iterate() 
+    local idlist, i, n, link = {}, 1, focus.number(), focus_head();
+    for j = 1, n do
+      idlist[j] = link:data().id
+      link = link:next()
+    end
+    return function()
+      local u
+      while i <= n do
+        u = find.unit(nil, idlist[i])
+        i = i + 1
+        if u then break end
+      end
+      return u
+    end
+  end
 end
 $]
+
+module Unit {
+  module properties{
+    bool api_client_unit_occupied
+      @ occupied (lua_State *L, Unit *punit);
+    bool api_client_unit_is_in_focus @ selected (lua_State *L, Unit *punit);
+  }
+  void api_client_unit_focus_add
+    @ select (lua_State *L, Unit *punit);
+  void api_client_unit_focus_remove
+    @ unselect (lua_State *L, Unit *punit);
+
+  /* control methods */
+  void api_client_unit_airlift
+    @ airlift (lua_State *L, Unit *punit, City *pcity);
+  void api_client_unit_load
+    @ load (lua_State *L, Unit *pcargo, Unit *ptransport);
+  void api_client_unit_unload
+    @ unload_from (lua_State *L, Unit *pcargo, Unit *ptransport=NULL);
+  bool api_client_unit_move
+    @ goto (lua_State *L, Unit *punit, Tile *ptile);
+  void api_client_unit_upgrade
+    @ upgrade (lua_State *L, Unit *punit);
+  void api_client_unit_build_city
+    @ build_city (lua_State *L, Unit *punit, const char *name=NULL);
+  void api_client_unit_give_orders
+    @ give_orders (lua_State *L, Unit *punit, lua_Object seq,
+                   bool vigilant = FALSE, bool rep = FALSE);
+  void api_client_unit_request_activity_targeted
+    @ request_activity (lua_State *L, Unit *punit, const char *activity_name,
+                        const char *target = NULL);
+  /* keep string form first */
+  void api_client_unit_do_action_name
+    @ do_action (lua_State *L, Unit *punit, const char *name,
+                 lua_Object target = 0, lua_Object value = 0);
+  void api_client_unit_do_action
+    @ do_action (lua_State *L, Unit *punit, const Action *paction,
+                 lua_Object target = 0, lua_Object value = 0);
+  void api_client_unit_do_action_id
+    @ do_action (lua_State *L, Unit *punit, int act, lua_Object target = 0,
+                 lua_Object value = 0);
+}
+
+$[
+  -- Unloads something from something appropriate
+  function Unit:unload(uother)
+    if uother:transporter() == self then
+      uother:unload_from(self)
+    else
+      self:unload_from(uother)
+    end
+  end
+$]
+
+module City {
+  module properties{
+    bool api_client_city_occupied
+      @ occupied (lua_State *L, City *pcity);
+  }
+  void api_client_city_change_production
+    @ change_production (lua_State *L, City *pcity, lua_Object prod);
+}
