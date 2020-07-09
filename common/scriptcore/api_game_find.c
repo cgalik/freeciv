@@ -303,6 +303,27 @@ Terrain *api_find_terrain_by_name(lua_State *L, const char *name_orig)
   return terrain_by_rule_name(name_orig);
 }
 
+/**********************************************************************//*****
+  Return the action with the given rule action_name
+*****************************************************************************/
+Action *api_find_action_by_name(lua_State *L, const char *action_name)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_ARG_NIL(L, action_name, 2, string, NULL);
+
+  return action_by_number(gen_action_by_name(action_name, fc_strcasecmp));
+}
+
+/**********************************************************************//*****
+  Return the action with the given id
+*****************************************************************************/
+Action *api_find_action_by_id(lua_State *L, int actn_id)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+
+  return action_by_number(actn_id);
+}
+
 /*****************************************************************************
   Return a dummy pointer.
 *****************************************************************************/

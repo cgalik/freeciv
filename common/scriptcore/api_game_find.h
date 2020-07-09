@@ -57,6 +57,9 @@ Tech_Type *api_find_tech_type_by_name(lua_State *L, const char *name_orig);
 Terrain *api_find_terrain(lua_State *L, int terrain_id);
 Terrain *api_find_terrain_by_name(lua_State *L, const char *name_orig);
 
+Action *api_find_action_by_name(lua_State *L, const char *action_name);
+Action *api_find_action_by_id(lua_State *L, int actn_id);
+
 Nonexistent *api_find_nonexistent(lua_State *L);
 
 #ifdef __cplusplus

@@ -33,6 +33,7 @@ $#include "luascript_types.h"
 
 /* just to simply get the default value */
 $#define api_HCTR_PT (!have_cities_trade_route(pcity, tcity))
+$#define api_UT_PU unit_tile(punit)
 
 /* Classes. */
 struct Player {
@@ -86,6 +87,7 @@ struct Tile {
 
   const int index @ id;
   Player *owner;
+  City *worked;
   signed short continent;
 };
 
@@ -104,12 +106,17 @@ struct Building_Type {
 };
 
 struct Unit_Type {
+  char graphic_str[MAX_LEN_NAME];
+  char graphic_alt[MAX_LEN_NAME];
   int build_cost;
   int move_rate;
   int fuel;
   int happy_cost;
+  int vision_radius_sq;
 
   const int item_number @ id;
+  Unit_Type *obsoleted_by;
+  Unit_Type *converted_to;
 };
 
 struct Tech_Type {
@@ -197,10 +204,20 @@ module ORDER {
   };
 }
 
+module VISION {
+  enum /* vision_layer */ {
+    V_MAIN @ MAIN,
+    V_INVIS @ INVIS
+  }
+}
+
 /* Module Game */
 module game {
   int api_methods_game_turn
     @ turn (lua_State *L);
+  int api_methods_game_win_chance
+    @ win_chance (lua_State *L,
+                  int as, int ahp, int afp, int ds, int dhp, int dfp);
   extern Terrain_Misc terrain_control;
 }
 
@@ -234,6 +251,14 @@ module Player {
       @ id (lua_State *L, Player *self);
     int api_methods_player_team_number
       @ team_number (lua_State *L, Player *pplayer);
+    const char *api_methods_player_team_rule_name
+      @ team_rule_name (lua_State *L, Player *pplayer);
+    const char *api_methods_player_spaceship_state
+      @ spaceship_state (lua_State *L, Player *pplayer);
+    double api_methods_player_spaceship_success_rate
+      @ spaceship_success_rate (lua_State *L, Player *pplayer);
+    double api_methods_player_spaceship_travel_time
+      @ spaceship_travel_time(lua_State *L, Player *pplayer);
   }
 
   int api_methods_player_num_cities
@@ -252,6 +277,8 @@ module Player {
     @ research_rule_name (lua_State *L, Player *self);
   const char *api_methods_research_name_translation
     @ research_name_translation (lua_State *L, Player *self);
+  Tech_Type *api_methods_player_researching
+    @ researching (lua_State *L, Player *self, int *bulbs = 0);
 
   int api_methods_player_culture_get
     @ culture(lua_State *L, Player *self);
@@ -317,6 +344,8 @@ module City {
     @ has_building(lua_State *L, City *self, Building_Type *building);
   int api_methods_city_map_sq_radius
     @ map_sq_radius(lua_State *L, City *self);
+  int api_methods_city_vision_sq_radius
+    @ vision_radius_sq(lua_State *L, City *self, int vl = V_MAIN);
   int api_methods_city_inspire_partisans
     @ inspire_partisans(lua_State *L, City *self, Player *inspirer);
   double api_methods_city_waste_level_ostr
@@ -397,12 +426,16 @@ module Unit {
       @ moves_left(lua_State *L, Unit *punit);
     int api_methods_unit_vet_get
       @ veteran(lua_State *L, Unit *punit);
+    const char *api_methods_unit_vet_name
+      @ veteran_rule_name (lua_State *L, Unit *punit);
     const char *api_methods_unit_activity
       @ activity(lua_State *L, Unit *punit);
     const char *api_methods_unit_activity_target
       @ activity_target (lua_State *L, Unit *punit);
     lua_Object api_methods_unit_orders_index
       @ orders_index(lua_State *L, Unit *punit);
+    Player *api_methods_unit_nationality
+      @ nationality(lua_State *L, Unit *punit);
   }
 
   Unit *api_methods_unit_transporter
@@ -411,13 +444,28 @@ module Unit {
     @ is_on_possible_city_tile (lua_State *L, Unit *self);
   Direction api_methods_unit_orientation_get
     @ facing(lua_State *L, Unit *self);
+  int api_methods_unit_attack_power
+    @ attack_power (lua_State *L, Unit *punit, Unit *tunit);
+  int api_methods_unit_defense_power
+    @ defense_power (lua_State *L, Unit *punit, Unit *tunit);
+  double api_methods_unit_win_chance
+    @ win_chance(lua_State *L, Unit *punit, Unit *tunit);
   int api_methods_unit_move_rate
     @ move_rate(lua_State *L, Unit *punit);
   int api_methods_unit_activity_rate
     @ activity_rate(lua_State *L, Unit *punit);
+  int api_methods_unit_vision_sq_radius
+    @ vision_radius_sq(lua_State *L, Unit *punit, Tile *ptile = api_UT_PU, 
+                       int vl = V_MAIN);
   lua_Object api_methods_unit_orders
     @ orders (lua_State *L, Unit *punit,
               bool *repeat = FALSE, bool *vigilant = FALSE);
+  lua_Object api_methods_unit_ap_vs
+    @ act_prob_vs (lua_State *L, Unit *punit, lua_Object actn,
+                   lua_Object target, lua_Object *r2 = 1);
+  bool api_methods_unit_can_do_activity
+    @ can_do_activity (lua_State *L, Unit *punit, const char *activity_name,
+                       const char *target, const Tile *ptile = api_UT_PU);
 }
 
 module methods_private {
@@ -436,6 +484,12 @@ end
 
 function Unit:get_homecity()
   return find.city(self.owner, self.homecity)
+end
+
+function Unit:action_possible(act, tgt)
+  local pmin, pmax = self:act_prob_vs(act, tgt)
+  if pmin then return pmax > 0 end
+  return false
 end
 $]
 
@@ -560,6 +614,8 @@ module Unit_Type {
     @ name_translation (lua_State *L, Unit_Type *self);
   bool api_methods_unit_type_can_exist_at_tile
     @ can_exist_at_tile(lua_State *L, Unit_Type *self, Tile *ptile);
+  lua_Object api_methods_unit_type_veteran_system
+    @ veteran_system (lua_State *L, Unit_Type *self);
 }
 
 $[
@@ -607,6 +663,10 @@ module Achievement {
 
 /* Module Action. */
 module Action {
+  module properties {
+    const char *api_methods_action_target_kind
+      @ target_kind(lua_State *L, Action *self);
+  }
   const char *api_methods_action_rule_name
     @ rule_name (lua_State *L, Action *self);
   const char *api_methods_action_name_translation
@@ -679,6 +739,10 @@ module find {
     @ terrain (lua_State *L, const char *name_orig);
   Terrain *api_find_terrain
     @ terrain (lua_State *L, int terrain_id);
+  Action *api_find_action_by_name
+    @ action (lua_State *L, const char * action_name);
+  Action *api_find_action_by_id
+    @ action (lua_State *L, int actn_id);
   Nonexistent *api_find_nonexistent
     @ nonexistent (lua_State *L);
 }

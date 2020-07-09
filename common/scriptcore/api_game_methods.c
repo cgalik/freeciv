@@ -20,6 +20,7 @@
 #include "actions.h"
 #include "citizens.h"
 #include "culture.h"
+#include "combat.h"
 #include "game.h"
 #include "government.h"
 #include "improvement.h"
@@ -33,6 +34,7 @@
 #include "tile.h"
 #include "unitlist.h"
 #include "unittype.h"
+#include "vision.h"
 
 /* common/scriptcore */
 #include "luascript.h"
@@ -46,6 +48,7 @@
 static int tile_gcdist(const struct tile *ptile, const struct player *plr);
 static Output_type_id luao2otype(lua_State *L, lua_Object oty);
 /* ]] */
+static lua_Object ap2top(lua_State *L, struct act_prob ap, lua_Object *r2);
 
 static /* FIXME: Move this to some common C file [[ */
 int tile_gcdist(const struct tile *ptile, const struct player *plr)
@@ -68,6 +71,33 @@ int tile_gcdist(const struct tile *ptile, const struct player *plr)
     } city_list_iterate_end;
   }
   return FC_INFINITY == res ? -1 : res;
+}
+
+/***********************************************************************//****
+  Helper to return two values from tolua-wrapped code.
+  For normal ap, the first result is lower estimation and the second one
+  is upper estimation, in half-percents. For special ap, first result
+  is nil and the second one is an explanation string.
+*****************************************************************************/
+static lua_Object ap2top(lua_State *L, struct act_prob ap, lua_Object *r2)
+{
+  if (ap.min <= ap.max) {
+    lua_pushinteger(L, ap.max);
+    *r2 = lua_gettop(L);
+    lua_pushinteger(L, ap.min);
+  } else {
+    if (253 == ap.min && 0 == ap.max) {
+      lua_pushstring(L, "not relevant");
+    } else if(254 == ap.min && 0 == ap.max) {
+      lua_pushstring(L, "not implemented");
+    } else {
+      fc_assert_msg(FALSE, "act_prob unknown special value!");
+      lua_pushnil(L);
+    }
+    *r2 = lua_gettop(L);
+    lua_pushnil(L);
+  }
+  return lua_gettop(L);
 }
 
 static Output_type_id luao2otype(lua_State *L, lua_Object oty)
@@ -112,6 +142,25 @@ int api_methods_game_turn(lua_State *L)
 
   return game.info.turn;
 }
+
+/*****************************************************************************
+  Return game win chance with tabular arguments
+*****************************************************************************/
+double api_methods_game_win_chance(lua_State *L, 
+                                   int as, int ahp, int afp,
+                                   int ds, int dhp, int dfp)
+{
+  LUASCRIPT_CHECK_STATE(L, 0.0);
+  LUASCRIPT_CHECK_ARG(L, as >= 0, 2, "att.strength", 0.0);
+  LUASCRIPT_CHECK_ARG(L, ahp >= 0, 3, "att.health", 0.0);
+  LUASCRIPT_CHECK_ARG(L, afp > 0, 4, "att.firepower", 0.0);
+  LUASCRIPT_CHECK_ARG(L, ds >= 0, 2, "def.strength", 0.0);
+  LUASCRIPT_CHECK_ARG(L, dhp >= 0, 3, "def.health", 0.0);
+  LUASCRIPT_CHECK_ARG(L, dfp > 0, 4, "def.firepower", 0.0);
+
+  return win_chance(as, ahp, afp, ds, dhp, dfp);
+}
+
 
 /*****************************************************************************
   Return TRUE if pbuilding is a wonder.
@@ -345,6 +394,8 @@ int api_methods_caravan_bonus(lua_State *L, City *pcity, City *tcity,
   LUASCRIPT_CHECK_SELF(L, pcity, 0);
   LUASCRIPT_CHECK_ARG_NIL(L, tcity, 3, city, 0);
 
+  /* FIXME: for foreign cities, dumb client does not know
+   * if its owner knows and thus can work a single tile => errors... */
   return get_caravan_enter_city_trade_bonus(pcity, tcity, establish);
 }
 
@@ -439,6 +490,25 @@ int api_methods_city_map_sq_radius(lua_State *L, City *pcity)
   LUASCRIPT_CHECK_SELF(L, pcity, 0);
 
   return city_map_radius_sq_get(pcity);
+}
+
+/*****************************************************************************
+  Return the square vision raduis of the city
+*****************************************************************************/
+int api_methods_city_vision_sq_radius(lua_State *L, City *self, int vl)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, self, 0);
+  LUASCRIPT_CHECK_ARG(L, V_MAIN <= vl && vl < V_COUNT, 3,
+                      "Wrong vision layer", 0);
+
+  switch (vl) {
+  case V_MAIN:
+    return get_city_bonus(self, EFT_CITY_VISION_RADIUS_SQ);
+  case V_INVIS:
+    return 2;
+  };
+  fc_assert_ret_val(FALSE /* should not be here */, -1);
 }
 
 /**************************************************************************
@@ -667,6 +737,64 @@ int api_methods_player_team_number(lua_State *L, Player *pplayer)
 }
 
 /*****************************************************************************
+  Return player team rule name
+*****************************************************************************/
+const char *api_methods_player_team_rule_name(lua_State *L, Player *pplayer)
+{
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, pplayer, FALSE);
+
+  return team_rule_name(pplayer->team);
+}
+
+/*********************************************************************//******
+  Return string describing space race status of pplayer, nil if no spaceship
+*****************************************************************************/
+const char *api_methods_player_spaceship_state(lua_State *L, Player *pplayer)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, pplayer, NULL);
+
+  switch (pplayer->spaceship.state) {
+  case SSHIP_NONE:
+    break;
+  case SSHIP_STARTED:
+    return "Started";
+  case SSHIP_LAUNCHED:
+    return "Launched";
+  case SSHIP_ARRIVED:
+    return "Arrived";
+  default:
+    fc_assert_msg(FALSE, "wrong spaceship state");
+  }
+  return NULL;
+}
+
+/*********************************************************************//******
+  Return pplayer's spaceship success rate
+*****************************************************************************/
+double
+  api_methods_player_spaceship_success_rate(lua_State *L, Player *pplayer)
+{
+  LUASCRIPT_CHECK_STATE(L, 0.0);
+  LUASCRIPT_CHECK_SELF(L, pplayer, 0.0);
+
+  return pplayer->spaceship.success_rate;
+}
+
+/*********************************************************************//******
+  Return pplayer's spaceship travel time, 0.0 if no spaceship
+*****************************************************************************/
+double
+  api_methods_player_spaceship_travel_time(lua_State *L, Player *pplayer)
+{
+  LUASCRIPT_CHECK_STATE(L, 0.0);
+  LUASCRIPT_CHECK_SELF(L, pplayer, 0.0);
+
+  return pplayer->spaceship.travel_time;
+}
+
+/*****************************************************************************
   Return the number of cities pplayer has.
 *****************************************************************************/
 int api_methods_player_num_cities(lua_State *L, Player *pplayer)
@@ -775,6 +903,22 @@ const char *api_methods_research_name_translation(lua_State *L, Player *pplayer)
   LUASCRIPT_CHECK_SELF(L, pplayer, FALSE);
 
   return research_name_translation(research_get(pplayer));
+}
+
+/**********************************************************************//*****
+  Return tech the player is researching and how many bulbs are scored
+*****************************************************************************/
+Tech_Type
+  *api_methods_player_researching(lua_State *L, Player *self, int *bulbs)
+{
+  struct research *r;
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, self, FALSE);
+
+  r = research_get(self);
+  fc_assert_ret_val_msg(r, NULL, "The player research is undefined!"); 
+  *bulbs  = r->bulbs_researched;
+  return advance_by_number(r->researching);
 }
 
 /*****************************************************************************
@@ -923,6 +1067,24 @@ const char *api_methods_action_name_translation(lua_State *L, Action *pact)
   LUASCRIPT_CHECK_SELF(L, pact, NULL);
 
   return action_id_name_translation(pact->id);
+}
+
+/*****************************************************************************
+  Return action target kind
+*****************************************************************************/
+const char *api_methods_action_target_kind(lua_State *L, Action *self)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, self, NULL);
+
+  switch (action_get_target_kind(self)) {
+  case ATK_CITY:
+    return "City";
+  case ATK_UNIT:
+    return "Unit";
+  default:
+    fc_assert_ret_val_msg(FALSE, NULL, "wrong actor kind for an action!");
+  }
 }
 
 /*****************************************************************************
@@ -1270,6 +1432,42 @@ Direction api_methods_unit_orientation_get(lua_State *L, Unit *punit)
   return punit->facing;
 }
 
+/************************************************************************//***
+  Get punit attacking tunit power (in current state)
+*****************************************************************************/
+int api_methods_unit_attack_power(lua_State *L, Unit *punit, Unit *tunit)
+{
+  LUASCRIPT_CHECK_STATE(L, 0.);
+  LUASCRIPT_CHECK_SELF(L, punit, 0.);
+  LUASCRIPT_CHECK_ARG_NIL(L, tunit, 2, Unit, 0.);
+
+  return get_total_attack_power(punit, tunit);
+}
+
+/************************************************************************//***
+  Get punit defending from tunit power (in current state)
+*****************************************************************************/
+int api_methods_unit_defense_power(lua_State *L, Unit *punit, Unit *tunit)
+{
+  LUASCRIPT_CHECK_STATE(L, 0.);
+  LUASCRIPT_CHECK_SELF(L, punit, 0.);
+  LUASCRIPT_CHECK_ARG_NIL(L, tunit, 2, Unit, 0.);
+
+  return get_total_defense_power(tunit, punit);
+}
+
+/************************************************************************//***
+  Get punit attacking tunit win chance (in current state)
+*****************************************************************************/
+double api_methods_unit_win_chance(lua_State *L, Unit *punit, Unit *tunit)
+{
+  LUASCRIPT_CHECK_STATE(L, 0.);
+  LUASCRIPT_CHECK_SELF(L, punit, 0.);
+  LUASCRIPT_CHECK_ARG_NIL(L, tunit, 2, Unit, 0.);
+
+  return unit_win_chance(punit, tunit);
+}
+
 /*****************************************************************************
   Get unit activity target rule name
 *****************************************************************************/
@@ -1364,6 +1562,17 @@ Unit *api_methods_unit_transporter(lua_State *L, Unit *punit)
 }
 
 /*****************************************************************************
+  Return punit's nationality, if any
+*****************************************************************************/
+Player *api_methods_unit_nationality(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, punit, NULL);
+
+  return unit_nationality(punit);
+}
+
+/*****************************************************************************
   Return list head for cargo list for Unit
 *****************************************************************************/
 Unit_List_Link *api_methods_private_unit_cargo_list_head(lua_State *L,
@@ -1413,9 +1622,21 @@ int api_methods_unit_moves_left_get(lua_State *L, Unit *punit)
 int api_methods_unit_vet_get(lua_State *L, Unit *punit)
 {
   LUASCRIPT_CHECK_STATE(L, -1);
-  LUASCRIPT_CHECK_ARG_NIL(L, punit, 2, Unit, -1);
+  LUASCRIPT_CHECK_SELF(L, punit, -1);
 
   return punit->veteran;
+}
+
+/***********************************************************************//****
+  Get unit veteranship rank untranslated name
+*****************************************************************************/
+const char *api_methods_unit_vet_name(lua_State *L, Unit *punit)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, punit, NULL);
+
+  return untranslated_name(&utype_veteran_level(unit_type_get(punit), 
+                                                punit->veteran)->name);
 }
 
 /********************************************************************//*******
@@ -1427,6 +1648,141 @@ const char *api_methods_unit_activity(lua_State *L, Unit *punit)
   LUASCRIPT_CHECK_SELF(L, punit, NULL);
   
   return unit_activity_name(punit->activity);
+}
+
+/*****************************************************************************
+  Return the square vision raduis of the unit
+  (clone of server get_unit_vision_at(), in client, works with known info)
+*****************************************************************************/
+int api_methods_unit_vision_sq_radius(lua_State *L, Unit *punit, Tile *ptile,
+                                      int vl)
+{
+  int base;
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, punit, 0);
+  LUASCRIPT_CHECK_ARG(L, V_MAIN <= vl && vl < V_COUNT, 3,
+                      "Wrong vision layer", 0);
+  if (!ptile) {
+    ptile = unit_tile(punit);
+  }
+  base = (unit_type_get(punit)->vision_radius_sq
+          + get_unittype_bonus(unit_owner(punit), ptile,
+                               unit_type_get(punit),
+                               EFT_UNIT_VISION_RADIUS_SQ));
+  switch (vl) {
+  case V_MAIN:
+    return MAX(0, base);
+  case V_INVIS:
+    return CLIP(0, base, 2);
+  case V_COUNT:
+    break;
+  }
+
+  log_error("Unsupported vision layer variant: %d.", vl);
+  return 0;
+}
+
+/********************************************************************//*******
+  Return action ptobability (in two values, see ap2top()) for a unit
+  versus a target (unit or city). Returns nil, "wrong target"
+  if the target kind is wrong.
+*****************************************************************************/
+lua_Object api_methods_unit_ap_vs(lua_State *L, Unit *punit,
+                                  lua_Object actn, lua_Object target,
+                                  lua_Object *r2)
+{
+  enum gen_action act;
+  tolua_Error err;
+
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, punit, 0);
+  LUASCRIPT_CHECK_ARG(L, LUA_TUSERDATA == lua_type(L, target), 4,
+                      "target must be an object (unit or city)", 0);
+
+  switch (lua_type(L, actn)) {
+  case LUA_TUSERDATA:
+    LUASCRIPT_CHECK_ARG(L, !tolua_isusertype(L, actn, "Action", 0, &err), 3,
+                        "wrong object type supplied as an action", 0);
+    act = ((Action *) tolua_tousertype(L, actn, NULL))->id;
+    break;
+  case LUA_TNUMBER:
+    {
+      int ch;
+      act = lua_tointegerx(L, actn, &ch);
+      LUASCRIPT_CHECK_ARG(L, ch && action_id_is_valid(act), 3,
+                          "wrong action id specified", 0);
+    }
+    break;
+  case LUA_TSTRING:
+    act = gen_action_by_name(lua_tostring(L, actn), fc_strcasecmp);
+    LUASCRIPT_CHECK_ARG(L, action_id_is_valid(act), 3,
+                        "wrong action name specified", 0);
+    break;
+  default:
+    luascript_arg_error(L, 3, "wrong type supplied as an action");
+    return 0;
+  }
+
+  switch (action_id_get_target_kind(act)) {
+  case ATK_UNIT:
+    if (tolua_isusertype(L, target, "Unit", 0, &err)) {
+      return
+      ap2top(L, action_prob_vs_unit(punit, act,
+                                    (Unit *) tolua_tousertype(L, target,
+                                                              NULL)), r2);
+    }
+    break;
+  case ATK_CITY:
+    if (tolua_isusertype(L, target, "City", 0, &err)) {
+      return
+      ap2top(L, action_prob_vs_city(punit, act,
+                                    (City *) tolua_tousertype(L, target,
+                                                              NULL)), r2);
+    }
+    break;
+  default:
+    fc_assert_msg(FALSE, "wrong action target kind!");
+  }
+  lua_pushstring(L, "wrong target");
+  *r2 = lua_gettop(L);
+  lua_pushnil(L);
+  return lua_gettop(L);
+}
+
+/********************************************************************//*******
+  Check if unit can do activity activity_name (by specenum unit_activity)
+  Returns false for activities that have targets if one is not specified
+  and the activity is neither "Mine" nor "Irrigate"
+*****************************************************************************/
+bool api_methods_unit_can_do_activity(lua_State *L, Unit *punit,
+                                      const char *activity_name,
+                                      const char *target,
+                                      const Tile *ptile)
+{
+  enum unit_activity act;
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, punit, FALSE);
+  LUASCRIPT_CHECK_ARG_NIL(L, activity_name, 3, string, FALSE);
+  
+  act = unit_activity_by_name(activity_name, fc_strcasecmp);
+  LUASCRIPT_CHECK_ARG(L, act != unit_activity_invalid(), 3,
+                      "invalid activity", FALSE);
+  if (!target) {
+    if (activity_requires_target(act)) {
+      switch (act) {
+      case ACTIVITY_MINE:
+      case ACTIVITY_IRRIGATE:
+        return can_unit_do_activity(punit, act);
+      default:
+        return FALSE;
+      }
+    }
+  } else {
+    /* const */ struct extra_type *tgt = extra_type_by_rule_name(target);
+    LUASCRIPT_CHECK_ARG(L, tgt, 4, "extra name must be valid", FALSE);
+    return can_unit_do_activity_targeted_at(punit, act, tgt, ptile);
+  }
+  return FALSE;
 }
 
 /*****************************************************************************
@@ -1509,6 +1865,44 @@ const char *api_methods_unit_type_name_translation(lua_State *L,
   return utype_name_translation(punit_type);
 }
 
+/*********************************************************************//******
+  Construct and return a 0-baseed sequence describing Unit_Type
+   veteran system:
+  {{rule_name = string, power_fact, move_bonus = int[%]}}
+  Alas, [work_]raise_chance is not sent to a client
+*****************************************************************************/
+lua_Object api_methods_unit_type_veteran_system(lua_State *L,
+                                                Unit_Type *self)
+{
+  int lc;
+  lua_Object s, t;
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, self, 0);
+
+  lc = utype_veteran_levels(self);
+  lua_createtable(L, lc, 0);
+  s = lua_gettop(L);
+  for (int i = 0; i < lc; i++) {
+    const struct veteran_level *vl = utype_veteran_level(self, i);
+    lua_pushinteger(L, i);
+    lua_createtable(L, 0, is_server() ? 5 : 3);
+    t = lua_gettop(L);
+    lua_pushstring(L, untranslated_name(&vl->name));
+    lua_setfield(L, t, "rule_name");
+    lua_pushinteger(L, vl->power_fact);
+    lua_setfield(L, t, "power_fact");
+    lua_pushinteger(L, vl->move_bonus);
+    lua_setfield(L, t, "move_bonus");
+    if (is_server()) {
+      lua_pushinteger(L, vl->raise_chance);
+      lua_setfield(L, t, "raise_chance");
+      lua_pushinteger(L, vl->work_raise_chance);
+      lua_setfield(L, t, "work_raise_chance");
+    }
+    lua_settable(L, s);
+  }
+  return s;
+}
 
 /*****************************************************************************
   Return Unit for list link

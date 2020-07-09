@@ -73,6 +73,8 @@ static inline bool try_set_activity(enum unit_activity *activity,
 static enum direction8 top2dir8(lua_State *L)
 {
   enum direction8 dir;
+  tolua_Error err;
+
   switch (lua_type(L, -1)) {
   case LUA_TNUMBER:
     dir = (enum direction8) lua_tointeger(L, -1);
@@ -87,7 +89,7 @@ static enum direction8 top2dir8(lua_State *L)
     }
     break;
   case LUA_TUSERDATA:
-    if (!strcmp(tolua_typename(L, -1), "Direction")) {
+    if (tolua_isusertype(L, -1, "Direction", 0, &err)) {
       dir = *((enum direction8 *) lua_touserdata(L, -1));
     }
   default:
