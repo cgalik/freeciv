@@ -60,6 +60,10 @@ Terrain *api_find_terrain_by_name(lua_State *L, const char *name_orig);
 Action *api_find_action_by_name(lua_State *L, const char *action_name);
 Action *api_find_action_by_id(lua_State *L, int actn_id);
 
+Achievement *api_find_achievement(lua_State *L, int id);
+
+Disaster *api_find_disaster(lua_State *L, int id);
+
 Nonexistent *api_find_nonexistent(lua_State *L);
 
 #ifdef __cplusplus

@@ -72,6 +72,9 @@ City *api_find_city_by_name(lua_State *L, Player *pplayer, const char *name)
 City *api_find_city_by_name2(lua_State *L, const char *pn, const char *name)
 {
   Player *pplayer = pn ? player_by_name(pn) : NULL;
+  if (pn && !pplayer) {
+    return NULL;
+  }
 
   return api_find_city_by_name(L, pplayer, name);
 }
@@ -322,6 +325,24 @@ Action *api_find_action_by_id(lua_State *L, int actn_id)
   LUASCRIPT_CHECK_STATE(L, NULL);
 
   return action_by_number(actn_id);
+}
+
+/**********************************************************************//*****
+  Return the achievement with the given id
+*****************************************************************************/
+Achievement *api_find_achievement(lua_State *L, int id)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  return achievement_by_number(id);
+}
+
+/**********************************************************************//*****
+  Return the disaster with the given id
+*****************************************************************************/
+Disaster *api_find_disaster(lua_State *L, int id)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  return disaster_by_number(id);
 }
 
 /*****************************************************************************

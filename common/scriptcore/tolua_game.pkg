@@ -743,6 +743,10 @@ module find {
     @ action (lua_State *L, const char * action_name);
   Action *api_find_action_by_id
     @ action (lua_State *L, int actn_id);
+  Achievement *api_find_achievement
+    @ achievement (lua_State *L, int id);
+  Disaster *api_find_disaster
+    @ disaster (lua_State *L, int id);
   Nonexistent *api_find_nonexistent
     @ nonexistent (lua_State *L);
 }
