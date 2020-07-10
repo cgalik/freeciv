@@ -1512,16 +1512,17 @@ void client_player_maps_reset(void)
       new_size = MAP_INDEX_SIZE;
     } else {
       /* We don't need (or have) information about players other
-       * than user of the client. Allocate just one bit as that's
-       * the minimum bitvector size (cannot allocate 0 bits)*/
+       * than user of the client. But we need some assumptions
+       * for city_can_work_tile()*/
       new_size = 1;
     }
 
     vision_layer_iterate(v) {
-      dbv_resize(&pplayer->client.tile_vision[v], new_size);
+      dbv_resize(&pplayer->client.tile_vision[v], 
+                 V_MAIN == v ? MAP_INDEX_SIZE : new_size);
     } vision_layer_iterate_end;
 
-    dbv_resize(&pplayer->tile_known, new_size);
+    dbv_resize(&pplayer->tile_known, MAP_INDEX_SIZE);
   } players_iterate_end;
 }
 

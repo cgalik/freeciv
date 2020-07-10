@@ -394,8 +394,6 @@ int api_methods_caravan_bonus(lua_State *L, City *pcity, City *tcity,
   LUASCRIPT_CHECK_SELF(L, pcity, 0);
   LUASCRIPT_CHECK_ARG_NIL(L, tcity, 3, city, 0);
 
-  /* FIXME: for foreign cities, dumb client does not know
-   * if its owner knows and thus can work a single tile => errors... */
   return get_caravan_enter_city_trade_bonus(pcity, tcity, establish);
 }
 

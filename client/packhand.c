@@ -944,6 +944,20 @@ static void city_packet_common(struct city *pcity, struct tile *pcenter,
     refresh_city_mapcanvas(pcity, pcenter, FALSE, FALSE);
   }
 
+  if (powner != client_player()) {
+    /* Wild guess: the player knows all the tiles around the city */
+    /* (needed for assumptions if the city may work its tiles) */
+    int vr_sq = get_city_bonus(pcity, EFT_CITY_VISION_RADIUS_SQ);
+    int wr_sq = game.info.init_city_radius_sq
+                + get_city_bonus(pcity, EFT_CITY_RADIUS_SQ);
+    vr_sq = MAX(vr_sq, wr_sq);
+    vr_sq = MAX(vr_sq, city_map_radius_sq_get(pcity));
+    vr_sq = MAX(vr_sq, 2); /* just to be sure */
+    circle_iterate(pcenter, vr_sq, t) {
+      dbv_set(&powner->tile_known, tile_index(t));
+    } circle_iterate_end;
+  }
+
   if (city_workers_display==pcity)  {
     city_workers_display=NULL;
   }
