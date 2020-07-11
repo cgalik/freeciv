@@ -1139,6 +1139,44 @@ void handle_city_short_info(const struct packet_city_short_info *packet)
   city_packet_common(pcity, pcenter, powner, worked_tiles,
                      city_is_new, FALSE, FALSE);
 
+  /* Make some guessing about what is the city's trade output 
+   * for trade route planning */
+  /* FIXME: reading wrong union branch! */
+  if (game.server.trade_revenue_style == TRS_SIMPLE) {
+    int base_trade = 0;
+    int wc = 0, uc = 0;
+    int sz = packet->size;
+    int ttr[MAX_CITY_SIZE];
+    circle_iterate(pcenter, radius_sq, ct) {
+      if (pcity == tile_worked(ct)) {
+        if (ct != pcenter) {
+          wc++;
+        }
+        base_trade += city_tile_output_now(pcity, ct, O_TRADE);
+      } else if (city_can_work_tile(pcity, ct) && client_player()
+                 && TILE_KNOWN_UNSEEN
+                    == tile_get_known(ct, client_player())){
+        /* We know that a good tile is here, maybe the city works it? */
+        int i = uc;
+        int nto = city_tile_output_now(pcity, ct, O_TRADE);
+        if (i == 0 || nto > ttr[i - 1] || uc + wc < sz) {
+          while (i > 0 && nto > ttr[i - 1]) {
+            ttr[i] = ttr[i - 1];
+            i--;
+          }
+          ttr[i] = nto;
+          uc++;
+        }
+      }
+    } circle_iterate_end;
+    if (wc < sz) {
+      uc = MIN(uc - 1, sz - wc);
+      while (uc >= 0) {
+        base_trade += ttr[uc--];
+      }
+    }
+    pcity->citizen_base[O_TRADE] = base_trade;
+  }
   if (city_is_new) {
     if (city_has_changed_owner) {
       script_client_signal_emit("city_transferred", pcity, powner, ploser);

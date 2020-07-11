@@ -4414,6 +4414,7 @@ void handle_server_setting_enum
   /* Set up trade styles from the options for client calculators.
    * This is not a hard part of Freeciv protocol and may be incompatible
    * with some servers. Untranslated names are what is tested. */
+  /* FIXME: writing in the wrong civ_game union variant! */
   if (!strcmp("trade_revenue_style", option_name(poption))) {
     if (!strcmp("CLASSIC", packet->support_names[packet->val])) {
       game.server.trade_revenue_style = TRS_CLASSIC;
