@@ -114,9 +114,6 @@ void luascript_vars_save(struct fc_lua *fcl, struct section_file *file,
 void luascript_vars_load(struct fc_lua *fcl, struct section_file *file,
                          const char *section);
 
-/* Tool to return directions to tolua as lua_Object's without segfaults */
-/* FIXME: can tolua do it itself???*/
-lua_Object luascript_new_Direction(lua_State *L, Direction dir);
 
 /* Returns additional arguments on failure. */
 #define LUASCRIPT_ASSERT_CAT(str1, str2) str1 ## str2

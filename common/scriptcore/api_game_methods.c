@@ -1422,12 +1422,12 @@ Tile *api_methods_unit_tile_get(lua_State *L, Unit *punit)
 /*****************************************************************************
   Get unit orientation
 *****************************************************************************/
-lua_Object api_methods_unit_orientation_get(lua_State *L, Unit *punit)
+Direction api_methods_unit_orientation_get(lua_State *L, Unit *punit)
 {
-  LUASCRIPT_CHECK_STATE(L, 0);
-  LUASCRIPT_CHECK_ARG_NIL(L, punit, 2, Unit, 0);
+  LUASCRIPT_CHECK_STATE(L, direction8_invalid());
+  LUASCRIPT_CHECK_ARG_NIL(L, punit, 2, Unit, direction8_invalid());
 
-  return luascript_new_Direction(L, punit->facing);
+  return punit->facing;
 }
 
 /************************************************************************//***

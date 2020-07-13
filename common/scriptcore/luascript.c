@@ -62,8 +62,6 @@
 #define LUASCRIPT_SECURE_LUA_VERSION1 502
 #define LUASCRIPT_SECURE_LUA_VERSION2 503
 
-static int luascript_clean_Direction(lua_State *L);
-
 static const char *luascript_unsafe_symbols[] = {
   "debug",
   "dofile",
@@ -996,34 +994,4 @@ void luascript_vars_load(struct fc_lua *fcl, struct section_file *file,
 
   vars = secfile_lookup_str_default(file, "", "%s", section);
   luascript_do_string(fcl, vars, section);
-}
-
-/****************************************************************//******
-  Clean Direction object from Lua memory
-************************************************************************/
-static int luascript_clean_Direction(lua_State *L)
-{
-  Direction* self = (Direction*) tolua_tousertype(L, 1, 0);
-  tolua_release(L, self);
-  free(self);
-
-  return 0;
-}
-
-/*********************************************************************//******
-  Return dir as a tolua object from a tolua callback with correct memory
-  manipulation (standard tolua-5.3 tool does not do it for C projects)
-*****************************************************************************/
-lua_Object luascript_new_Direction(lua_State *L, Direction dir)
-{
-  LUASCRIPT_CHECK_STATE(L, 0);
-
-  if (!is_valid_dir(dir)) {
-    lua_pushnil(L);
-  } else {
-    Direction* res = tolua_copy(L, (void *)&dir, sizeof(Direction));
-    tolua_pushusertype(L, tolua_clone(L, res, luascript_clean_Direction),
-                       "Direction");
-  }
-  return lua_gettop(L);
 }
