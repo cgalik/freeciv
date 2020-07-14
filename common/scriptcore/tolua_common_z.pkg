@@ -50,6 +50,7 @@ do
     "Unit_List_Link",
     "Unit_Type",
     "Disaster",
+    "Direction",
     "Achievement",
     "Action",
     "Terrain_Misc"

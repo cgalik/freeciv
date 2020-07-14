@@ -62,6 +62,8 @@ Achievement *api_find_achievement(lua_State *L, int id);
 
 Disaster *api_find_disaster(lua_State *L, int id);
 
+const Direction *api_find_direction (lua_State *L, int id);
+
 Nonexistent *api_find_nonexistent(lua_State *L);
 
 #ifdef __cplusplus

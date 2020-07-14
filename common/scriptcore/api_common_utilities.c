@@ -70,7 +70,16 @@ void api_utilities_log_base(lua_State *L, int level, const char *message)
   luascript_log(fcl, level, "%s", message);
 }
 
-/**************************************************************************
+/*********************************************************************//***
+  Just returns the direction as number
+**************************************************************************/
+int api_utilities_direction_id(lua_State *L, Direction dir)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  return (int) dir;
+}
+
+/*********************************************************************//***
   Convert text describing direction into direction
 **************************************************************************/
 const Direction *api_utilities_str2dir(lua_State *L, const char *dir)

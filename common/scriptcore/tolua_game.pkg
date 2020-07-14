@@ -131,6 +131,10 @@ struct Disaster {
   const int id;
 };
 
+struct Direction {
+  /* nothing here, it's enum */
+};
+
 struct Achievement {
   const int id;
 };
@@ -741,6 +745,10 @@ module find {
     @ achievement (lua_State *L, int id);
   Disaster *api_find_disaster
     @ disaster (lua_State *L, int id);
+  Direction *api_utilities_str2dir
+    @ direction (lua_State *L, const char *str);
+  Direction *api_find_direction
+    @ direction (lua_State *L, int id);
   Nonexistent *api_find_nonexistent
     @ nonexistent (lua_State *L);
 }
@@ -772,17 +780,26 @@ module effects {
 }
 
 /* Direction module */
+module Direction {
+  module properties {
+    int api_utilities_direction_id
+      @ id (lua_State *L, Direction dir);
+    const char *api_utilities_dir2str
+      @ name (lua_State *L, Direction dir);
+  }
+}
+
 module direction {
- const Direction *api_utilities_str2dir
+ Direction *api_utilities_str2dir
    @ str2dir(lua_State *L, const char *str);
- const Direction *api_utilities_dir_ccw
+ Direction *api_utilities_dir_ccw
    @ next_ccw(lua_State *L, Direction self);
- const Direction *api_utilities_dir_cw
+ Direction *api_utilities_dir_cw
    @ next_cw(lua_State *L, Direction self);
- const Direction *api_utilities_opposite_dir
+ Direction *api_utilities_opposite_dir
    @ opposite(lua_State *L, Direction self);
  const char *api_utilities_dir2str
-   @ name (lua_State *L, Direction dir);
+   @ dir2str (lua_State *L, Direction dir);
 }
 
 $[

@@ -356,6 +356,15 @@ Disaster *api_find_disaster(lua_State *L, int id)
   return disaster_by_number(id);
 }
 
+/**********************************************************************//*****
+  Return the direction with the given id
+*****************************************************************************/
+const Direction *api_find_direction (lua_State *L, int id)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  return luascript_dir((enum direction8) id);
+}
+
 /*****************************************************************************
   Return a dummy pointer.
 *****************************************************************************/
