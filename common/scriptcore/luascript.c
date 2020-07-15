@@ -28,6 +28,9 @@
 #include "log.h"
 #include "registry.h"
 
+/* common */
+#include "map.h"
+
 /* common/scriptcore */
 #include "luascript_func.h"
 #include "luascript_signal.h"
