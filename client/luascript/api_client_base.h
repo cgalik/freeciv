@@ -69,6 +69,12 @@ Unit_List_Link *api_client_private_focus_head(lua_State *L);
 bool api_client_city_occupied(lua_State *L, City *pcity);
 void api_client_city_change_production(lua_State *L, City *pcity,
                                        lua_Object prod);
+void api_client_city_change_specialist(lua_State *L, City *pcity,
+                                       const char *s_from,
+                                       const char *s_to);
+bool api_client_city_make_worker(lua_State *L, City *pcity, Tile *ptile);
+bool api_client_city_make_specialist(lua_State *L, City *pcity, Tile *ptile);
+const char *api_client_city_cma_name(lua_State *L, City *pcity);
 
 #ifdef __cplusplus
 }

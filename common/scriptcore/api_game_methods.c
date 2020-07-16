@@ -161,6 +161,25 @@ double api_methods_game_win_chance(lua_State *L,
   return win_chance(as, ahp, afp, ds, dhp, dfp);
 }
 
+/*******************************************************************//******
+  Return specialist name by specialist type index
+***************************************************************************/
+const char *api_methods_game_specialist_name_by_id(lua_State *L, int id)
+{
+  const struct specialist *s = specialist_by_number(id);
+  LUASCRIPT_CHECK_STATE(L, NULL);
+
+  return s ? specialist_rule_name(s) : NULL;
+}
+
+/*******************************************************************//******
+  Return default specialist name
+***************************************************************************/
+const char *api_methods_game_defaut_specialist(lua_State *L)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  return specialist_rule_name(specialist_by_number(DEFAULT_SPECIALIST));
+}
 
 /*****************************************************************************
   Return TRUE if pbuilding is a wonder.

@@ -222,30 +222,43 @@ module game {
   int api_methods_game_win_chance
     @ win_chance (lua_State *L,
                   int as, int ahp, int afp, int ds, int dhp, int dfp);
+  const char *api_methods_game_specialist_name_by_id
+    @ specialist (lua_State *L, int id);
   extern Terrain_Misc terrain_control;
 }
 
+module methods_private {
+  module game { /* note: these methods are safe, just to call without () */
+    const char *api_methods_game_defaut_specialist
+      @ default_specialist(lua_State *L);
+  }
+}
+
 $[
-  -- More easy constants access
-  do
-    local game_mt = getmetatable(game);
-    local game_idx = game_mt.__index
-    local tc = game.terrain_control;
-    game_mt.__index = function(self, field)
-      local gamer = game_idx(self, field)
-      if nil ~= gamer then
-        return gamer
+-- More easy constants access
+do
+  local game_mt = getmetatable(game);
+  local game_idx = game_mt.__index
+  local tc = game.terrain_control;
+  local gzf = methods_private.game
+  game_mt.__index = function(self, field)
+    if gzf[field] then
+      return gzf[field]()
+    end
+    local gamer = game_idx(self, field)
+    if nil ~= gamer then
+      return gamer
+    else
+      if field == 'SINGLE_MOVE' then
+        return tc.move_fragments
+      elseif field == 'MOVE_COST_IGTER' then
+        return tc.igter_cost
       else
-        if field == 'SINGLE_MOVE' then
-          return tc.move_fragments
-        elseif field == 'MOVE_COST_IGTER' then
-          return tc.igter_cost
-        else
-          return tc[field] --delegation
-        end
+        return tc[field] --delegation
       end
     end
   end
+end
 $]
 
 /* Module Player. */
@@ -943,6 +956,10 @@ do
     return index_iterate(find.tile)
   end
 
+  -- Iterate over specialist names
+  function game.specialists_iterate()
+    return index_iterate(game.specialist)
+  end
   -- NOTE: Identical further definitions can be made for
   -- governments, tech_types, building_types etc
 end

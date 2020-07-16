@@ -28,6 +28,8 @@ int api_methods_game_turn(lua_State *L);
 double api_methods_game_win_chance(lua_State *L,
                                    int as, int ahp, int afp,
                                    int ds, int dhp, int dfp);
+const char *api_methods_game_specialist_name_by_id(lua_State *L, int id);
+const char *api_methods_game_defaut_specialist(lua_State *L);
 
 /* Building Type */
 bool api_methods_building_type_is_wonder(lua_State *L,

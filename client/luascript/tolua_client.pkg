@@ -209,7 +209,36 @@ module City {
   module properties{
     bool api_client_city_occupied
       @ occupied (lua_State *L, City *pcity);
+    const char *api_client_city_cma_name
+      @ cma_name (lua_State *L, City *pcity);
   }
   void api_client_city_change_production
     @ change_production (lua_State *L, City *pcity, lua_Object prod);
+  void api_client_city_change_specialist
+    @ change_specialist(lua_State *L, City *pcity,
+                        const char *s_from, const char *s_to);
+  bool api_client_city_make_worker
+    @ work (lua_State *L, City *pcity, Tile *ptile);
+  bool api_client_city_make_specialist
+    @ release (lua_State *L, City *pcity, Tile *ptile);
 }
+
+$[
+-- Toggles a worker on a tile, does nothing to city center unless asked
+function City:toggle(t, aaw)
+  if not aaw then
+    if not t or self.tile == t then
+      return false
+    end
+  end
+  if t.worked == self then
+    return self:release(t)
+  else
+    return self:work(t)
+  end
+end
+-- Auto-arrange workers
+function City:auto_arrange()
+  self:work()
+end
+$]

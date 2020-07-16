@@ -17,13 +17,18 @@
 
 /* common */
 #include "featured_text.h"
+#include "specialist.h"
 #include "tech.h"
 
 /* common/scriptcore */
 #include "luascript.h"
 
+/* common/aicore */
+#include "aicore/cm.h"
+
 /* client */
 #include "chatline_common.h"
+#include "citydlg_common.h"
 #include "client_main.h"
 #include "control.h"
 #include "goto.h"
@@ -35,6 +40,12 @@
 /* FIXME: don't know how to include mapview_common.h
  *  with each its include/?_g.h */
 extern void center_tile_mapcanvas(struct tile* ptile);
+/* FIXME: same problem with stuff rom
+ * agents/cma_fec.h->agents/cma_core.h->common/aicore/cm.h */
+extern bool cma_is_city_under_agent(const struct city *pcity,
+                                    struct cm_parameter *parameter);
+extern const char *cmafec_get_short_descr(const struct cm_parameter
+                                           *const parameter);
 
 /* Move this to some header files [[ */
 /* NB! If you return from it, the current index is still in L! */
@@ -689,6 +700,90 @@ void api_client_city_change_production(lua_State *L, City *pcity,
   lua_getfield(L, prod, "id");
   dsend_packet_city_change(&client.conn, pcity->id, kind,
                            lua_tointeger(L, -1)); /* cleaned by wrap code */
+}
+
+/**********************************************************************//***
+  Request city specialist change from one type to the another
+***************************************************************************/
+void api_client_city_change_specialist(lua_State *L, City *pcity,
+                                       const char *s_from,
+                                       const char *s_to)
+{
+  const struct specialist *from, *to;
+  LUASCRIPT_CHECK_STATE(L);
+  LUASCRIPT_CHECK_SELF(L, pcity);
+  LUASCRIPT_CHECK_ARG(L, from = specialist_by_rule_name(s_from), 3,
+                      "wrong 'from' specialist type name");
+  LUASCRIPT_CHECK_ARG(L, to = specialist_by_rule_name(s_to), 4,
+                      "wrong 'to' specialist type name");
+
+  (void) city_change_specialist(pcity, specialist_index(from),
+                                specialist_index(to));
+}
+
+/**********************************************************************//***
+  Request placing pcity worker at ptile.
+  If ptile is NULL or the pcity's center, the workers will be auto-arranged.
+  Returns if the tile seems to be within the city radius
+***************************************************************************/
+bool api_client_city_make_worker(lua_State *L, City *pcity, Tile *ptile)
+{
+  int city_x, city_y;
+  bool res;
+
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, pcity, FALSE);
+  if (!ptile) {
+    city_x = 0;
+    city_y = 0;
+    res = TRUE;
+  } else {
+    res = city_base_to_city_map(&city_x, &city_y, pcity, ptile);
+  }
+  (void) dsend_packet_city_make_worker(&client.conn, pcity->id,
+                                       city_x, city_y);
+  return res;
+}
+
+/**********************************************************************//***
+  Request removing pcity worker from ptile making a default specialist.
+  If ptile is NULL or the pcity's center, the workers will be auto-arranged.
+  Returns if the tile seems to be within the city radius
+***************************************************************************/
+bool api_client_city_make_specialist(lua_State *L, City *pcity, Tile *ptile)
+{
+  int city_x, city_y;
+  bool res;
+
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, pcity, FALSE);
+  if (!ptile) {
+    city_x = 0;
+    city_y = 0;
+    res = TRUE;
+  } else {
+    res = city_base_to_city_map(&city_x, &city_y, pcity, ptile);
+  }
+  (void) dsend_packet_city_make_specialist(&client.conn, pcity->id,
+                                           city_x, city_y);
+  return res;
+}
+
+/**********************************************************************//***
+  Return CMA preset name, "custom" for custom governor, nil for none
+***************************************************************************/
+const char *api_client_city_cma_name(lua_State *L, City *pcity)
+{
+  struct cm_parameter cmpar;
+
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, pcity, NULL);
+
+  if (cma_is_city_under_agent(pcity, &cmpar)) {
+    return cmafec_get_short_descr(&cmpar);
+  } else {
+    return NULL;
+  }
 }
 
 /**********************************************************************//***
