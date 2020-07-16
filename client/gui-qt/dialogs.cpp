@@ -3316,12 +3316,22 @@ bool qtg_request_transport(struct unit *pcargo, struct tile *ptile)
 {
   int tcount;
   hud_unit_loader *hul;
-  struct unit_list *potential_transports = unit_list_new();
+  struct unit_list *potential_transports;
   struct unit *best_transport = transporter_for_unit_at(pcargo, ptile);
+  struct player *pplayer = unit_owner(pcargo);
 
+  if (is_non_allied_unit_tile(ptile, pplayer)
+      || is_non_allied_city_tile(ptile, pplayer)) {
+    return FALSE; /* Can't enter the tile, let alone board on it */
+  }
+  if (!best_transport) {
+    return FALSE; /* Nothing to board */
+  }
+  potential_transports = unit_list_new();
   unit_list_iterate(ptile->units, ptransport) {
     if (can_unit_transport(ptransport, pcargo)
-        && get_transporter_occupancy(ptransport) < get_transporter_capacity(ptransport)) {
+        && get_transporter_occupancy(ptransport)
+           < get_transporter_capacity(ptransport)) {
       unit_list_append(potential_transports, ptransport);
     }
   } unit_list_iterate_end;
@@ -3329,7 +3339,6 @@ bool qtg_request_transport(struct unit *pcargo, struct tile *ptile)
   tcount = unit_list_size(potential_transports);
 
   if (tcount == 0) {
-    fc_assert(best_transport == NULL);
     unit_list_destroy(potential_transports);
 
     return false; /* Unit was not handled here. */
