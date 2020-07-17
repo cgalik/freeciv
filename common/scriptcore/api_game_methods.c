@@ -1530,9 +1530,9 @@ lua_Object api_methods_unit_orders(lua_State *L, Unit *punit,
     lua_pushinteger(L, punit->orders.list[i].order);
     lua_setfield(L, o, "order");
     if (is_valid_dir(punit->orders.list[i].dir)) {
-      tolua_obj = tolua_copy(L, (void*) &punit->orders.list[i].dir,
-                             sizeof(Direction));
-      tolua_pushusertype(L, tolua_clone(L, tolua_obj, NULL), "Direction");
+      tolua_pushusertype(L, (Direction *) /* const is so much violated... */
+                            luascript_dir(punit->orders.list[i].dir),
+                         "Direction");
       lua_setfield(L, o, "dir");
     }
     if (unit_activity_is_valid(punit->orders.list[i].activity)) {
