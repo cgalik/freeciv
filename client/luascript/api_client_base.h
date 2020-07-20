@@ -75,6 +75,8 @@ void api_client_city_change_specialist(lua_State *L, City *pcity,
 bool api_client_city_make_worker(lua_State *L, City *pcity, Tile *ptile);
 bool api_client_city_make_specialist(lua_State *L, City *pcity, Tile *ptile);
 const char *api_client_city_cma_name(lua_State *L, City *pcity);
+bool api_client_is_city_happy(lua_State *L, City *pcity);
+bool api_client_is_city_unhappy(lua_State *L, City *pcity);
 
 #ifdef __cplusplus
 }

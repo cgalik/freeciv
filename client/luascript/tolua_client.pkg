@@ -150,6 +150,8 @@ do
     end
   end
 end
+
+Tile.center = client.center
 $]
 
 module Unit {
@@ -221,6 +223,11 @@ module City {
     @ work (lua_State *L, City *pcity, Tile *ptile);
   bool api_client_city_make_specialist
     @ release (lua_State *L, City *pcity, Tile *ptile);
+  /* Overwriting common values (TODO: move them to tolua_server.pkg) */
+  bool api_client_is_city_happy
+    @ is_happy (lua_State *L, City *pcity);
+  bool api_client_is_city_unhappy
+    @ is_unhappy (lua_State *L, City *pcity);
 }
 
 $[

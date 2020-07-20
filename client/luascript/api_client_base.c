@@ -716,6 +716,31 @@ bool api_client_city_occupied(lua_State *L, City *pcity)
   return pcity->client.occupied;
 }
 
+/*****************************************************************************
+  Return TRUE iff city (foreign, as we remember it, or ours) is happy,
+  based on server reports if the city is not virtual
+*****************************************************************************/
+bool api_client_is_city_happy(lua_State *L, City *pcity)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, pcity, FALSE);
+
+  return city_is_virtual(pcity) ? city_happy(pcity) : pcity->client.happy;
+}
+
+/*****************************************************************************
+  Return TRUE iff city (foreign, as we remember it, or ours) is unhappy
+  based on server reports if the city is not virtual
+*****************************************************************************/
+bool api_client_is_city_unhappy(lua_State *L, City *pcity)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_SELF(L, pcity, FALSE);
+
+  return city_is_virtual(pcity)
+    ? city_unhappy(pcity) : pcity->client.unhappy;
+}
+
 /**********************************************************************//***
   Request city production change to the given item
 ***************************************************************************/
