@@ -181,7 +181,7 @@ static bool add_top(struct packet_unit_orders *p, lua_State *L,
   enum direction8 dir = DIR8_ORIGIN;
   enum unit_activity activity = ACTIVITY_LAST;
   int target = EXTRA_NONE;
-  const struct extra_type *extra = NULL;
+  /* const */ struct extra_type *extra = NULL;
   int times;
 
   LUASCRIPT_CHECK_STATE(L, FALSE);
@@ -194,27 +194,45 @@ static bool add_top(struct packet_unit_orders *p, lua_State *L,
   case LUA_TSTRING:
     /* Extra name, action name, direction or order specifier */
     {
-      extra = extra_type_by_rule_name(lua_tostring(L, -1));
+      const char *str = lua_tostring(L, -1);
+
+      extra = extra_type_by_rule_name(str);
       if (NULL != extra) {
-        target = extra_index(extra);
+        /* unspeific "Mine" may be misinterpreted for extra name
+         * while you actually plant forest here */
+        /* TODO: inspect previous work to see what actual terrain to expect */
+        const struct unit *pu = game_unit_by_number(p->unit_id);
+        const struct tile *dt = index_to_tile(p->dest_tile);
+        if (!fc_strcasecmp(str, "Mine")
+            && !can_unit_do_activity_targeted_at(pu, ACTIVITY_MINE,
+                                                 extra, dt)) {
+          activity = ACTIVITY_MINE;
+        } else if (!fc_strcasecmp(str, "Irrigate") /* just if it happens */
+            && !can_unit_do_activity_targeted_at(pu, ACTIVITY_IRRIGATE,
+                                                 extra, dt)) {
+          activity = ACTIVITY_IRRIGATE;
+        } else {
+          target = extra_index(extra);
+        }
         break;
       }
-    }
-    if (try_set_activity(&activity, lua_tostring(L, -1))) {
-      break;
-    }
-    dir = direction8_by_name(lua_tostring(L, -1), fc_strcasecmp);
-    if (is_valid_dir(dir)) {
-      break;
-    } else { /* raw dir8 in a character */
-      dir = (enum direction8) (lua_tostring(L, -1)[0] - '0');
-      if (dir < direction8_invalid() && is_valid_dir(dir)) {
+
+      if (try_set_activity(&activity, str)) {
         break;
       }
-    }
-    order = pchar2order(lua_tostring(L, -1));
-    if (ORDER_LAST != order) {
-      break;
+      dir = direction8_by_name(str, fc_strcasecmp);
+      if (is_valid_dir(dir)) {
+        break;
+      } else { /* raw dir8 in a character */
+        dir = (enum direction8) (str[0] - '0');
+        if (dir < direction8_invalid() && is_valid_dir(dir)) {
+          break;
+        }
+      }
+      order = pchar2order(str);
+      if (ORDER_LAST != order) {
+        break;
+      }
     }
     /* All checks and autofilling go later, but something must it be */
     luaL_error(L, "Unrecognized string '%s' supplied as an order",
