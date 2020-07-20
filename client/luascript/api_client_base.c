@@ -47,6 +47,13 @@ extern bool cma_is_city_under_agent(const struct city *pcity,
 extern const char *cmafec_get_short_descr(const struct cm_parameter
                                            *const parameter);
 
+enum actmove_res_type {
+  AMRT_NO,
+  AMRT_AUTO, /* All bigger values filled by add_top() */
+  AMRT_AUTO_EACH,
+  AMRT_ALL
+};
+
 /* Move this to some header files [[ */
 /* NB! If you return from it, the current index is still in L! */
 #define sequence_iterate(__luastate__, __seq__)                            \
@@ -57,7 +64,8 @@ extern const char *cmafec_get_short_descr(const struct cm_parameter
 #define macro2str(__macro__) macro2str_base(__macro__)
 /* ]] */
 
-static bool add_top(struct packet_unit_orders *p, lua_State *L);
+static bool add_top(struct packet_unit_orders *p, lua_State *L,
+                    enum actmove_res_type amrt);
 static enum unit_orders pchar2order(const char *order);
 static enum direction8 top2dir8(lua_State *L);
 
@@ -166,7 +174,8 @@ static enum unit_orders pchar2order(const char *order)
   Helper function, gets another order from top stack value and pops it.
   Returns false iff the value is invalid (performs minimal checks).
 ***************************************************************************/
-static bool add_top(struct packet_unit_orders *p, lua_State *L)
+static bool add_top(struct packet_unit_orders *p, lua_State *L,
+                    enum actmove_res_type amrt)
 {
   enum unit_orders order = ORDER_LAST;
   enum direction8 dir = DIR8_ORIGIN;
@@ -248,7 +257,7 @@ static bool add_top(struct packet_unit_orders *p, lua_State *L)
             lua_pop(L, 2); /* stack: */
             return FALSE;
           } /*stack: ordval ordval[i] */
-          if (!add_top(p, L)) { /* stack: ordval */
+          if (!add_top(p, L, amrt)) { /* stack: ordval */
             /* Invalid order in inner list.
              * Pop value and errmsg are done by the called function. */
             lua_pop(L, 1); /* stack: */
@@ -364,40 +373,62 @@ static bool add_top(struct packet_unit_orders *p, lua_State *L)
   /* Autofilling and checking */
   if (!unit_activity_is_valid(activity)) {
     if (target != EXTRA_NONE) {
-      if (extra_base_get(extra) != NULL) {
+      /* FIXME: some weird rulesets ay cause extras by different
+       * activities for different units... */
+      if (is_extra_caused_by(extra, EC_BASE)) {
         activity = ACTIVITY_BASE;
-      } else if (extra_road_get(extra) != NULL) {
+      } else if (is_extra_caused_by(extra, EC_ROAD)) {
         activity = ACTIVITY_GEN_ROAD;
+      } else if (is_extra_caused_by(extra, EC_MINE)) {
+        activity = ACTIVITY_MINE;
+      } else if (is_extra_caused_by(extra, EC_IRRIGATION)) {
+        activity = ACTIVITY_IRRIGATE;
       }
     }
   } else if (EXTRA_NONE == target) {
     enum extra_cause ec = activity_to_extra_cause(activity);
-    if (EC_NONE != ec) {
+    if (EC_NONE != ec) { /* Pillage gets EC_NONE, it's right */
       const struct unit *pu = game_unit_by_number(p->unit_id);
       const struct player *uo = unit_owner(pu);
       const struct tile *dt = index_to_tile(p->dest_tile);
-      extra = next_extra_for_tile(dt, ec, uo, pu);
-      if (extra) {
-        /* We found a thing to put here */
-        target = extra_index(extra);
-      } else if (activity_requires_target(activity)) {
-        /* All is already here but we have to put something */
-        extra_type_by_cause_iterate(ec, ety) {
-          target = extra_index(ety);
-          break;
-        } extra_type_by_cause_iterate_end;
+      const struct terrain *pterrain = tile_terrain(dt);
+
+      /* Don't supply anything for transforming activities */
+      if (!((EC_IRRIGATION == ec && pterrain->irrigation_result != pterrain)
+            || (EC_MINE == ec &&(pterrain->mining_result != pterrain)))) {
+        /* TODO: see what is built by previous orders */
+        extra = next_extra_for_tile(dt, ec, uo, pu);
+        if (extra) {
+          /* We found a thing to put here */
+          target = extra_index(extra);
+        } else if (activity_requires_target(activity)) {
+          /* All is already here but we have to put something */
+          extra_type_by_cause_iterate(ec, ety) {
+            target = extra_index(ety);
+            break;
+          } extra_type_by_cause_iterate_end;
+        }
       }
     }
   }
   if (order < ORDER_MOVE || order >= ORDER_LAST) {
     if (dir <= direction8_invalid() && is_valid_dir(dir)) {
-      const struct player *uo = unit_owner(game_unit_by_number(p->unit_id));
-      const struct tile *dt = index_to_tile(p->dest_tile);
-      if (is_non_allied_city_tile(dt, uo)
-          || is_non_allied_unit_tile(dt, uo)){
+      if (amrt <= AMRT_AUTO) {
+        order = ORDER_MOVE;
+      } else if (amrt == AMRT_ALL) {
         order = ORDER_ACTION_MOVE;
       } else {
-        order = ORDER_MOVE;
+        const
+          struct player *uo = unit_owner(game_unit_by_number(p->unit_id));
+        const struct tile *dt = index_to_tile(p->dest_tile);
+
+        fc_assert(amrt == AMRT_AUTO_EACH);
+        if (is_non_allied_city_tile(dt, uo)
+            || is_non_allied_unit_tile(dt, uo)){
+          order = ORDER_ACTION_MOVE;
+        } else {
+          order = ORDER_MOVE;
+        }
       }
     } else {
       dir = DIR8_ORIGIN;
@@ -406,6 +437,14 @@ static bool add_top(struct packet_unit_orders *p, lua_State *L)
     if (unit_activity_is_valid(activity)) {
       order = ORDER_ACTIVITY;
     }
+  }
+  /* You are not supposed to break the protocol */
+  if (0 > order || order >= ORDER_LAST) {
+    char buf[255];
+    fc_snprintf(buf, sizeof(buf), "Could not identify order [%d] (%d?)",
+                p->length + 1, order);
+    luascript_arg_error(L, 2, buf);
+    return FALSE;
   }
 
   /* Writing it to the package's next line */
@@ -419,7 +458,8 @@ static bool add_top(struct packet_unit_orders *p, lua_State *L)
   p->length++;
   
   /* Shifting destintion tile. */
-  if ((ORDER_MOVE == order) && is_valid_dir(dir)) {
+  if ((ORDER_MOVE == order || ORDER_ACTION_MOVE == order)
+      && is_valid_dir(dir)) {
     p->dest_tile = tile_index(mapstep(index_to_tile(p->dest_tile), dir));
   }
 
@@ -886,6 +926,7 @@ void api_client_unit_give_orders(lua_State *L, Unit *punit, lua_Object seq,
 {
   struct packet_unit_orders p;
   struct tile *curr = unit_tile(punit);
+  enum actmove_res_type amrt = AMRT_AUTO;
 
   LUASCRIPT_CHECK_STATE(L);
   LUASCRIPT_CHECK_SELF(L, punit);
@@ -898,9 +939,43 @@ void api_client_unit_give_orders(lua_State *L, Unit *punit, lua_Object seq,
   p.repeat = rep;
   p.vigilant = vigilant;
 
+  lua_getfield(L, seq, "actmove");
+  switch (lua_type(L, -1)) {
+  case LUA_TNIL:
+    break;
+  case LUA_TBOOLEAN:
+    if (lua_toboolean(L, -1)) {
+      amrt = AMRT_ALL;
+    } else {
+      amrt = AMRT_NO;
+    }
+    break;
+  case LUA_TSTRING:
+    {
+      const char *str = lua_tostring(L, -1);
+      if (!fc_strcasecmp(str, "all")) {
+        amrt = AMRT_ALL;
+        break;
+      } else if (!fc_strcasecmp(str, "auto_each")) {
+        amrt = AMRT_AUTO_EACH;
+        break;
+      } else if (!fc_strcasecmp(str, "auto")) {
+        break;
+      } else if (!fc_strcasecmp(str, "no")) {
+        amrt = AMRT_NO;
+        break;
+      }
+    }
+    /* no break */
+  default:
+    luascript_arg_error(L, 1, "Wrong 'actmove' specifier "
+                        "(must be 'auto|auto_each|all|no')");
+    return;
+  }
+  lua_pop(L, 1);
   sequence_iterate(L, seq) {/* push seq[i] */ 
-    if (p.length < MAX_LEN_ROUTE) {
-      if (!add_top(&p, L)) { /* pop seq[i] */
+    if (p.length <= MAX_LEN_ROUTE) {
+      if (!add_top(&p, L, amrt)) { /* pop seq[i] */
         break; /* for */
       }
     } else {
@@ -910,6 +985,16 @@ void api_client_unit_give_orders(lua_State *L, Unit *punit, lua_Object seq,
     }
   } sequence_iterate_end(L);
   lua_pop(L, 1); /* pop final nil */
+  if (AMRT_AUTO == amrt && p.length > 0) {
+    const struct player *uo = unit_owner(punit);
+    const struct tile *dt = index_to_tile(p.dest_tile);
+
+    if (ORDER_MOVE == p.orders[p.length - 1]
+        && (is_non_allied_city_tile(dt, uo)
+            || is_non_allied_unit_tile(dt, uo))){
+      p.orders[p.length - 1] = ORDER_ACTION_MOVE;
+    }
+  }
   send_packet_unit_orders(&client.conn, &p);
 }
 
