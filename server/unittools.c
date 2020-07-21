@@ -1016,13 +1016,17 @@ void unit_forget_last_activity(struct unit *punit)
 
 /**************************************************************************
   Return TRUE iff activity requires some sort of target to be specified by
-  the client.
+  the client. For mine and irrigate, it is not required to transform
+  but in other cases must be catched by execute_orders()
 **************************************************************************/
 bool unit_activity_needs_target_from_client(enum unit_activity activity)
 {
   switch (activity) {
   case ACTIVITY_PILLAGE:
     /* Can be set server side. */
+  case ACTIVITY_MINE:
+  case ACTIVITY_IRRIGATE:
+    /* May be terrain-transforming */
     return FALSE;
   default:
     return activity_requires_target(activity);
@@ -4225,12 +4229,19 @@ bool execute_orders(struct unit *punit, const bool fresh)
       }
     case ORDER_ACTIVITY:
       activity = order.activity;
+      dst_tile = unit_tile(punit);
       {
         struct extra_type *pextra = (order.target == EXTRA_NONE ?
                                        NULL :
                                        extra_by_number(order.target));
 
-        if (pextra == NULL && activity_requires_target(order.activity)) {
+        if (pextra == NULL && activity_requires_target(order.activity)
+            && !(ACTIVITY_MINE == order.activity
+                 && tile_terrain(dst_tile)
+                    != tile_terrain(dst_tile)->mining_result)
+            && !(ACTIVITY_IRRIGATE == order.activity
+                 && tile_terrain(dst_tile)
+                    != tile_terrain(dst_tile)->irrigation_result)) {
           /* Try to find a target extra before giving up this order or, if
            * serious enough, all orders. */
 
@@ -4274,7 +4285,7 @@ bool execute_orders(struct unit *punit, const bool fresh)
           set_unit_activity_targeted(punit, activity, pextra);
           send_unit_info(NULL, punit);
           break;
-        } else {
+        } else if (pextra) {
           if ((activity == ACTIVITY_BASE
                || activity == ACTIVITY_GEN_ROAD
                || activity == ACTIVITY_IRRIGATE
