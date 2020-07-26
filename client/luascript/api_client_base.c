@@ -111,6 +111,7 @@ static enum direction8 top2dir8(lua_State *L)
     if (tolua_isusertype(L, -1, "Direction", 0, &err)) {
       dir = *((enum direction8 *) lua_touserdata(L, -1));
     }
+    break;
   default:
     dir = direction8_invalid();
   }
@@ -970,6 +971,7 @@ void api_client_unit_give_orders(lua_State *L, Unit *punit, lua_Object seq,
   struct packet_unit_orders p;
   struct tile *curr = unit_tile(punit);
   enum actmove_res_type amrt = AMRT_AUTO;
+  int len;
 
   LUASCRIPT_CHECK_STATE(L);
   LUASCRIPT_CHECK_SELF(L, punit);
@@ -1015,10 +1017,13 @@ void api_client_unit_give_orders(lua_State *L, Unit *punit, lua_Object seq,
                         "(must be 'auto|auto_each|all|no')");
     return;
   }
-  lua_pop(L, 1);
+  lua_len(L, seq);
+  len = lua_tointeger(L, -1);
+  lua_pop(L, 2);
   sequence_iterate(L, seq) {/* push seq[i] */ 
     if (p.length <= MAX_LEN_ROUTE) {
-      if (!add_top(&p, L, amrt)) { /* pop seq[i] */
+      if (!add_top(&p, L, AMRT_AUTO == amrt && _seqno == len
+                   ? AMRT_AUTO_EACH : amrt)) { /* pop seq[i] */
         break; /* for */
       }
     } else {
@@ -1028,16 +1033,6 @@ void api_client_unit_give_orders(lua_State *L, Unit *punit, lua_Object seq,
     }
   } sequence_iterate_end(L);
   lua_pop(L, 1); /* pop final nil */
-  if (AMRT_AUTO == amrt && p.length > 0) {
-    const struct player *uo = unit_owner(punit);
-    const struct tile *dt = index_to_tile(p.dest_tile);
-
-    if (ORDER_MOVE == p.orders[p.length - 1]
-        && (is_non_allied_city_tile(dt, uo)
-            || is_non_allied_unit_tile(dt, uo))){
-      p.orders[p.length - 1] = ORDER_ACTION_MOVE;
-    }
-  }
   send_packet_unit_orders(&client.conn, &p);
 }
 
