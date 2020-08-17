@@ -345,18 +345,6 @@ int api_methods_city_specialists(lua_State *L, City *pcity,
 }
 
 /*********************************************************************//***
-  Returns if a city is virtual (can be got from City:trade_routes_iterate()
-  etc. in the client). Such virtual cities contain few useful info.
-**************************************************************************/
-bool api_methods_city_is_virtual(lua_State *L, City *pcity)
-{
-  LUASCRIPT_CHECK_STATE(L, FALSE);
-  LUASCRIPT_CHECK_SELF(L, pcity, FALSE);
-  
-  return city_is_virtual(pcity);
-}
-
-/*********************************************************************//***
   Returns current number of established trade routes
 **************************************************************************/
 int api_methods_city_traderoutes_number(lua_State *L, City *pcity)

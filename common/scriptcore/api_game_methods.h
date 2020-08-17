@@ -56,7 +56,6 @@ Unit_List_Link *api_methods_private_city_supported_list_head(lua_State *L,
 lua_Object api_methods_city_nationality(lua_State *L, City *pcity);
 int api_methods_city_specialists(lua_State *L, City *pcity,
                                  const char *spec);
-bool api_methods_city_is_virtual(lua_State *L, City *pcity);
 int api_methods_city_traderoutes_number(lua_State *L, City *pcity);
 lua_Object api_methods_city_trade_routes(lua_State *L, City *pcity);
 int api_methods_city_trade_with(lua_State *L, City *pcity, City *tcity);
