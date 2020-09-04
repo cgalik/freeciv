@@ -16,10 +16,13 @@
 #endif
 
 /* common */
+#include "culture.h"
 #include "diptreaty.h"
+#include "fc_interface.h"
 #include "game.h"
 #include "map.h"
 #include "metaknowledge.h"
+#include "research.h"
 #include "tile.h"
 #include "traderoutes.h"
 
@@ -167,12 +170,13 @@ static bool is_req_knowable(const struct player *pow_player,
 {
   fc_assert_ret_val_msg(NULL != pow_player, false, "No point of view");
 
-  if (req->source.kind == VUT_UTFLAG
-      || req->source.kind == VUT_UTYPE
-      || req->source.kind == VUT_UCLASS
-      || req->source.kind == VUT_UCFLAG
-      || req->source.kind == VUT_MINVETERAN
-      || req->source.kind == VUT_MINHP) {
+  switch (req->source.kind) {
+  case VUT_UTFLAG:
+  case VUT_UTYPE:
+  case VUT_UCLASS:
+  case VUT_UCFLAG:
+  case VUT_MINVETERAN:
+  case VUT_MINHP:
     switch (req->range) {
     case REQ_RANGE_LOCAL:
       if (target_unit == NULL) {
@@ -194,9 +198,7 @@ static bool is_req_knowable(const struct player *pow_player,
     case REQ_RANGE_COUNT:
       return FALSE;
     }
-  }
-
-  if (req->source.kind == VUT_UNITSTATE) {
+  case VUT_UNITSTATE:
     fc_assert_ret_val_msg(req->range == REQ_RANGE_LOCAL, FALSE, "Wrong range");
 
     if (target_unit == NULL) {
@@ -216,9 +218,8 @@ static bool is_req_knowable(const struct player *pow_player,
       /* Invalid property is unknowable. */
       return FALSE;
     }
-  }
-
-  if (req->source.kind == VUT_MINMOVES) {
+  case VUT_MINMOVES:
+  case VUT_NATIONALITY:
     fc_assert_ret_val_msg(req->range == REQ_RANGE_LOCAL, FALSE, "Wrong range");
 
     if (target_unit == NULL) {
@@ -244,9 +245,43 @@ static bool is_req_knowable(const struct player *pow_player,
       /* Invalid range */
       return FALSE;
     }
-  }
-
-  if (req->source.kind == VUT_DIPLREL) {
+  case VUT_AGE:
+    /* Sent only for players and own cities */
+    switch (req->range) {
+    case REQ_RANGE_CITY:
+      if (!target_city) {
+        return prob_type == RPT_CERTAIN;
+      }
+      return can_player_see_city_internals(pow_player, target_city);
+    case REQ_RANGE_PLAYER:
+      if (!target_player) {
+        return prob_type == RPT_CERTAIN;
+      }
+      return TRUE;
+    case REQ_RANGE_LOCAL:
+    default: /* invalid */
+      return FALSE;
+    }
+  case VUT_MINCULTURE:
+    /* Sent only for own cities */
+    if (req->range < REQ_RANGE_PLAYER && !target_city) {
+      return prob_type == RPT_CERTAIN;
+    }
+    switch (req->range) {
+    case REQ_RANGE_TRADEROUTE:
+      trade_routes_iterate (target_city, partner) {
+        if (can_player_see_city_internals(pow_player, partner)
+            && city_culture(partner) >= req->source.value.minculture) {
+          return TRUE;
+        }
+      } trade_routes_iterate_end;
+      /* no break */
+    case REQ_RANGE_CITY:
+      return can_player_see_city_internals(pow_player, target_city);
+    default:
+      return FALSE;
+    }
+  case VUT_DIPLREL:
     switch (req->range) {
     case REQ_RANGE_LOCAL:
       if (other_player == NULL
@@ -304,9 +339,7 @@ static bool is_req_knowable(const struct player *pow_player,
       return FALSE;
       break;
     }
-  }
-
-  if (req->source.kind == VUT_MINSIZE) {
+  case VUT_MINSIZE:
     if (target_city == NULL) {
       /* The city may exist but not be passed when the problem type is
        * RPT_POSSIBLE. */
@@ -316,91 +349,119 @@ static bool is_req_knowable(const struct player *pow_player,
     if (player_can_see_city_externals(pow_player, target_city)) {
       return TRUE;
     }
-  }
+  case VUT_CITYTILE:
+    {
+      struct city *pcity;
 
-  if (req->source.kind == VUT_CITYTILE) {
-    struct city *pcity;
-
-    if (target_tile == NULL) {
-      /* The tile may exist but not be passed when the problem type is
-       * RPT_POSSIBLE. */
-      return prob_type == RPT_CERTAIN;
-    }
-
-    switch (req->range) {
-    case REQ_RANGE_LOCAL:
-      /* Known because the tile is seen */
-      if (tile_is_seen(target_tile, pow_player)) {
-        return TRUE;
+      if (target_tile == NULL) {
+        /* The tile may exist but not be passed when the problem type is
+         * RPT_POSSIBLE. */
+        return prob_type == RPT_CERTAIN;
       }
 
-      /* The player knows its city even if he can't see it */
-      pcity = tile_city(target_tile);
-      return pcity && city_owner(pcity) == pow_player;
-    case REQ_RANGE_CADJACENT:
-      /* Known because the tile is seen */
-      if (is_tile_seen_cadj(pow_player, target_tile)) {
-        return TRUE;
-      }
-
-      /* The player knows its city even if he can't see it */
-      cardinal_adjc_iterate(target_tile, ptile) {
-        pcity = tile_city(ptile);
-        if (pcity && city_owner(pcity) == pow_player) {
+      switch (req->range) {
+      case REQ_RANGE_LOCAL:
+        /* Known because the tile is seen */
+        if (tile_is_seen(target_tile, pow_player)) {
           return TRUE;
         }
-      } cardinal_adjc_iterate_end;
 
-      /* Unknown */
-      return FALSE;
-    case REQ_RANGE_ADJACENT:
-      /* Known because the tile is seen */
-      if (is_tile_seen_adj(pow_player, target_tile)) {
-        return TRUE;
-      }
-
-      /* The player knows its city even if he can't see it */
-      adjc_iterate(target_tile, ptile) {
-        pcity = tile_city(ptile);
-        if (pcity && city_owner(pcity) == pow_player) {
+        /* The player knows its city even if he can't see it */
+        pcity = tile_city(target_tile);
+        return pcity && city_owner(pcity) == pow_player;
+      case REQ_RANGE_CADJACENT:
+        /* Known because the tile is seen */
+        if (is_tile_seen_cadj(pow_player, target_tile)) {
           return TRUE;
         }
-      } adjc_iterate_end;
 
-      /* Unknown */
-      return FALSE;
-    case REQ_RANGE_CITY:
-    case REQ_RANGE_TRADEROUTE:
-    case REQ_RANGE_CONTINENT:
-    case REQ_RANGE_PLAYER:
-    case REQ_RANGE_TEAM:
-    case REQ_RANGE_ALLIANCE:
-    case REQ_RANGE_WORLD:
-    case REQ_RANGE_COUNT:
-      /* Invalid range */
-      return FALSE;
+        /* The player knows its city even if he can't see it */
+        cardinal_adjc_iterate(target_tile, ptile) {
+          pcity = tile_city(ptile);
+          if (pcity && city_owner(pcity) == pow_player) {
+            return TRUE;
+          }
+        } cardinal_adjc_iterate_end;
+
+        /* Unknown */
+        return FALSE;
+      case REQ_RANGE_ADJACENT:
+        /* Known because the tile is seen */
+        if (is_tile_seen_adj(pow_player, target_tile)) {
+          return TRUE;
+        }
+
+        /* The player knows its city even if he can't see it */
+        adjc_iterate(target_tile, ptile) {
+          pcity = tile_city(ptile);
+          if (pcity && city_owner(pcity) == pow_player) {
+            return TRUE;
+          }
+        } adjc_iterate_end;
+
+        /* Unknown */
+        return FALSE;
+      case REQ_RANGE_CITY:
+      case REQ_RANGE_TRADEROUTE:
+      case REQ_RANGE_CONTINENT:
+      case REQ_RANGE_PLAYER:
+      case REQ_RANGE_TEAM:
+      case REQ_RANGE_ALLIANCE:
+      case REQ_RANGE_WORLD:
+      case REQ_RANGE_COUNT:
+        /* Invalid range */
+        return FALSE;
+      }
     }
-  }
-
-  if (req->source.kind == VUT_IMPROVEMENT) {
+  case VUT_IMPROVEMENT:
     switch (req->range) {
     case REQ_RANGE_WORLD:
     case REQ_RANGE_ALLIANCE:
     case REQ_RANGE_TEAM:
     case REQ_RANGE_PLAYER:
-    case REQ_RANGE_CONTINENT:
       /* Only wonders (great or small) can be required in those ranges.
        * Wonders are always visible. */
       return TRUE;
+    case REQ_RANGE_CONTINENT:
+      /* But the continent is known only when the tile is known
+       * and the wonder city is known to be on it, as well for target one */
+      if (!(target_player && target_city)) {
+        return prob_type == RPT_CERTAIN;
+      } else {
+        int wcid = target_player->wonders
+          [improvement_index(req->source.value.building)];
+        const struct city *wc
+          = player_city_by_number(target_player, wcid);
+        /* In client, it happens that wc == NULL when there is a wonder */
+        const struct tile *ct = city_tile(target_city), *wt;
+        if (!WONDER_BUILT(wcid)) {
+          return TRUE;
+        }
+        if (ct && (wt = city_tile(wc))) {
+          int pwcid = fc_funcs->player_tile_city_id_get(wt, pow_player);
+          int ptcid = fc_funcs->player_tile_city_id_get(ct, pow_player);
+          return pwcid == wcid && ptcid == target_city->id;
+        } else {
+          return FALSE;
+        }
+      }
     case REQ_RANGE_TRADEROUTE:
-      /* Could be known for trade routes to cities owned by pow_player as
-       * long as the requirement is present. Not present requirements would
+      /* Not present requirements would
        * require knowledge that no trade routes to another foreign city
        * exists (since all possible trade routes are to a city owned by
        * pow_player). Not worth the complexity, IMHO. */
-      return FALSE;
+      if (!target_city) {
+        return prob_type == RPT_CERTAIN;
+      }
+      trade_routes_iterate(target_city, pcity) {
+        if (can_player_see_city_internals(pow_player, pcity)
+            || (is_improvement_visible(req->source.value.building)
+                && player_can_see_city_externals(pow_player, pcity))) {
+          return TRUE;
+        }
+      } trade_routes_iterate_end;
+      /* no break */
     case REQ_RANGE_CITY:
-    case REQ_RANGE_LOCAL:
       if (!target_city) {
         /* RPT_CERTAIN: Can't be. No city to contain it.
          * RPT_POSSIBLE: A city like that may exist but not be passed. */
@@ -422,16 +483,17 @@ static bool is_req_knowable(const struct player *pow_player,
 
       /* No way to know if a city has an improvement */
       return FALSE;
+    case REQ_RANGE_LOCAL:
+      /* we supply it, we know it */
+      return target_building || prob_type == RPT_CERTAIN;
     case REQ_RANGE_CADJACENT:
     case REQ_RANGE_ADJACENT:
     case REQ_RANGE_COUNT:
       /* Not supported by the requirement type. */
       return FALSE;
     }
-  }
-
-  if (req->source.kind == VUT_NATION
-      || req->source.kind == VUT_NATIONGROUP) {
+  case VUT_NATION:
+  case VUT_NATIONGROUP:
     if (!target_player
         && (req->range == REQ_RANGE_PLAYER
             || req->range == REQ_RANGE_TEAM
@@ -442,22 +504,86 @@ static bool is_req_knowable(const struct player *pow_player,
       return prob_type == RPT_CERTAIN;
     }
 
-    return TRUE;
-  }
-
-  if (req->source.kind == VUT_ADVANCE || req->source.kind == VUT_TECHFLAG) {
-    if (req->range == REQ_RANGE_PLAYER) {
-      if (!target_player) {
-        /* The player (that may or may not possess the tech) may exist but
-         * not be passed when the problem type is RPT_POSSIBLE. */
-        return prob_type == RPT_CERTAIN;
-      }
-
-      return can_see_techs_of_target(pow_player, target_player);
+    if (req->range == REQ_RANGE_ALLIANCE) {
+      /* Must know this ally of target_player */
+      const struct player *pnp = req->source.value.nation->player;
+      return !pnp
+        || can_plr_see_all_sym_diplrels_of(pow_player, target_player)
+        || can_plr_see_all_sym_diplrels_of(pow_player, pnp);
     }
-  }
+    return TRUE;
+  case VUT_ADVANCE:
+  case VUT_TECHFLAG:
+    {
+      bool knowall = TRUE;
 
-  if (req->source.kind == VUT_GOVERNMENT) {
+      if (req->range != REQ_RANGE_WORLD && !target_player) {
+          /* The player (that may or may not possess the tech) may exist but
+           * not be passed when the problem type is RPT_POSSIBLE. */
+          return prob_type == RPT_CERTAIN;
+      }
+      switch (req->range) {
+      case REQ_RANGE_WORLD:
+        if (req->survives) { /* VUT_ADVANCE */
+          players_iterate (aplayer) {
+            if (player_has_embassy(pow_player, aplayer)
+                && TECH_KNOWN == research_invention_state
+                  (research_get(aplayer),
+                   advance_number(req->source.value.advance))) {
+                /* Surely one has ever studied the tech if now has it */
+                return TRUE;
+            } else {
+              /* We don't test if there is any tech loss, maybe there is */
+              knowall = FALSE;
+            }
+          } players_iterate_end;
+          return knowall;
+        }
+        players_iterate_alive(aplayer) {
+          if (player_has_embassy(pow_player, aplayer)) {
+            if (req->source.kind == VUT_ADVANCE
+                ? TECH_KNOWN == research_invention_state
+                  (research_get(aplayer),
+                   advance_number(req->source.value.advance))
+                : player_knows_techs_with_flag(aplayer,
+                                               req->source.value.techflag)) {
+              /* Surely one has ever studied the tech if now has it */
+              return TRUE;
+            }
+          } else {
+            knowall = FALSE;
+          }
+        } players_iterate_alive_end;
+        return knowall || prob_type == RPT_CERTAIN;
+      case REQ_RANGE_PLAYER:
+        return can_see_techs_of_target(pow_player, target_player);
+      case REQ_RANGE_TEAM:
+        return TRUE;
+      case REQ_RANGE_ALLIANCE:
+        players_iterate_alive(aplayer) {
+          if (pplayers_allied(target_player, aplayer)) {
+            if (player_has_embassy(pow_player, aplayer)) {
+              if (req->source.kind == VUT_ADVANCE ? TECH_KNOWN
+                    == research_invention_state
+                       (research_get(aplayer),
+                        advance_number(req->source.value.advance))
+                  : player_knows_techs_with_flag(aplayer,
+                                                 req->source.value.techflag)) {
+                /* Surely one has ever studied the tech if now has it */
+                return TRUE;
+              }
+            } else {
+              knowall = FALSE;
+            }
+          }
+        } players_iterate_alive_end;
+        return knowall;
+      default:
+        /* invalid */
+        return FALSE;
+      }
+    }
+  case VUT_GOVERNMENT:
     if (req->range == REQ_RANGE_PLAYER) {
       if (!target_player) {
         /* The player (that may or may not possess the tech) may exist but
@@ -468,9 +594,7 @@ static bool is_req_knowable(const struct player *pow_player,
       return (pow_player == target_player
               || could_intel_with_player(pow_player, target_player));
     }
-  }
-
-  if (req->source.kind == VUT_MAXTILEUNITS) {
+  case VUT_MAXTILEUNITS:
     if (target_tile == NULL) {
       /* The tile may exist but not be passed when the problem type is
        * RPT_POSSIBLE. */
@@ -513,16 +637,21 @@ static bool is_req_knowable(const struct player *pow_player,
       /* Non existing. */
       return FALSE;
     }
-  }
-
-  if (req->source.kind == VUT_TERRAIN
-      || req->source.kind == VUT_TERRFLAG
-      || req->source.kind == VUT_TERRAINCLASS
-      || req->source.kind == VUT_RESOURCE
-      || req->source.kind == VUT_EXTRA
-      || req->source.kind == VUT_EXTRAFLAG
-      || req->source.kind == VUT_BASEFLAG
-      || req->source.kind == VUT_BASEFLAG) {
+  case VUT_ACHIEVEMENT:
+    /* One sees only one's own ones */
+    if (!target_player) {
+      return  prob_type == RPT_CERTAIN;
+    } else {
+      return target_player == pow_player;
+    }
+  case VUT_TERRAIN:
+  case VUT_TERRFLAG:
+  case VUT_TERRAINCLASS:
+  case VUT_RESOURCE:
+  case VUT_EXTRA:
+  case VUT_EXTRAFLAG:
+  case VUT_BASEFLAG:
+  case VUT_ROADFLAG:
     if (target_tile == NULL) {
       /* The tile may exist but not be passed when the problem type is
        * RPT_POSSIBLE. */
@@ -561,11 +690,25 @@ static bool is_req_knowable(const struct player *pow_player,
       /* Non existing range for requirement types. */
       return FALSE;
     }
-  }
-
-  if (req->source.kind == VUT_OTYPE) {
-    /* This requirement type is intended to specify the situation. */
+  case VUT_TERRAINALTER:
+    /* Local is the only possible range */
+    if (target_tile == NULL) {
+      return prob_type == RPT_CERTAIN;
+    }
+    return tile_is_seen(target_tile, pow_player);
+  /* This one is dummy */
+  case VUT_NONE:
+  /* These requirement types are intended to specify the situation. */
+  case VUT_OTYPE:
+  case VUT_SPECIALIST:
+  /* These ones are gloobally known for all valid ranges */
+  case VUT_AI_LEVEL:
+  case VUT_STYLE:
+  case VUT_MINYEAR:
+  case VUT_TOPO:
     return TRUE;
+  case VUT_COUNT:
+    fc_assert(FALSE); /* error */
   }
 
   /* Uncertain or no support added yet. */
@@ -585,13 +728,12 @@ mke_eval_req(const struct player *pow_player,
              const struct impr_type *target_building,
              const struct tile *target_tile,
              const struct unit *target_unit,
+             const struct unit_type *target_unittype,
              const struct output_type *target_output,
              const struct specialist *target_specialist,
              const struct requirement *req,
              const enum   req_problem_type prob_type)
 {
-  const struct unit_type *target_unittype;
-
   if (!is_req_knowable(pow_player, target_player, other_player,
                        target_city, target_building, target_tile,
                        target_unit, target_output,
@@ -599,10 +741,8 @@ mke_eval_req(const struct player *pow_player,
     return TRI_MAYBE;
   }
 
-  if (target_unit) {
+  if (!target_unittype && target_unit) {
     target_unittype = unit_type_get(target_unit);
-  } else {
-    target_unittype = NULL;
   }
 
   if (is_req_active(target_player, other_player, target_city,
@@ -627,6 +767,7 @@ mke_eval_reqs(const struct player *pow_player,
               const struct impr_type *target_building,
               const struct tile *target_tile,
               const struct unit *target_unit,
+              const struct unit_type *target_unittype,
               const struct output_type *target_output,
               const struct specialist *target_specialist,
               const struct requirement_vector *reqs,
@@ -639,7 +780,7 @@ mke_eval_reqs(const struct player *pow_player,
   requirement_vector_iterate(reqs, preq) {
     current = mke_eval_req(pow_player, target_player, other_player,
                            target_city, target_building, target_tile,
-                           target_unit, target_output,
+                           target_unit, target_unittype, target_output,
                            target_specialist, preq, prob_type);
     if (current == TRI_NO) {
       return TRI_NO;
@@ -649,6 +790,40 @@ mke_eval_reqs(const struct player *pow_player,
   } requirement_vector_iterate_end;
 
   return result;
+}
+
+/**************************************************************************
+  Find out if the effect value is known
+
+  The knowledge of the actor is assumed to be given in the parameters.
+
+  If meta knowledge is missing TRI_MAYBE will be returned.
+**************************************************************************/
+bool is_effect_val_known(enum effect_type effect_type,
+                         const struct player *pow_player,
+                         const struct player *target_player,
+                         const struct player *other_player,
+                         const struct city *target_city,
+                         const struct impr_type *target_building,
+                         const struct tile *target_tile,
+                         const struct unit *target_unit,
+                         const struct unit_type *target_unittype,
+                         const struct output_type *target_output,
+                         const struct specialist *target_specialist)
+{
+  effect_list_iterate(get_effects(effect_type), peffect) {
+    if (TRI_MAYBE == mke_eval_reqs(pow_player, target_player,
+                                   other_player, target_city,
+                                   target_building, target_tile,
+                                   target_unit, target_unittype,
+                                   target_output,
+                                   target_specialist,
+                                   &(peffect->reqs), RPT_CERTAIN)) {
+      return FALSE;
+    }
+  } effect_list_iterate_end;
+
+  return TRUE;
 }
 
 /**************************************************************************
