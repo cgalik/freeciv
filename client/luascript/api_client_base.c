@@ -91,7 +91,7 @@ static inline bool try_set_activity(enum unit_activity *activity,
 ***************************************************************************/
 static enum direction8 top2dir8(lua_State *L)
 {
-  enum direction8 dir;
+  enum direction8 dir = direction8_invalid();
   tolua_Error err;
 
   switch (lua_type(L, -1)) {
@@ -113,7 +113,7 @@ static enum direction8 top2dir8(lua_State *L)
     }
     break;
   default:
-    dir = direction8_invalid();
+    /* invalid */;
   }
   return dir;
 }
