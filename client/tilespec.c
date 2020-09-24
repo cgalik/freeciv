@@ -4204,7 +4204,17 @@ static int fill_unit_sprite_array(const struct tileset *t,
       break;
     case ACTIVITY_POLLUTION:
     case ACTIVITY_FALLOUT:
-      s = t->sprites.extras[extra_index(punit->activity_target)].rmact;
+      if (punit->activity_target) {
+        s = t->sprites.extras[extra_index(punit->activity_target)].rmact;
+      } else {
+        int etype = 0;
+        fc_assert_msg(FALSE, "No target for clean unit activity!");
+        extra_type_by_rmcause_iterate(punit->activity, pex) {
+          etype = extra_index(pex);
+          break;
+        } extra_type_by_rmcause_iterate_end;
+        s = t->sprites.extras[etype].rmact;
+      }
       break;
     case ACTIVITY_PILLAGE:
       s = t->sprites.unit.pillage;
@@ -4229,7 +4239,17 @@ static int fill_unit_sprite_array(const struct tileset *t,
       break;
     case ACTIVITY_BASE:
     case ACTIVITY_GEN_ROAD:
-      s = t->sprites.extras[extra_index(punit->activity_target)].activity;
+      if (punit->activity_target) {
+        s = t->sprites.extras[extra_index(punit->activity_target)].activity;
+      } else {
+        int etype = 0;
+        fc_assert_msg(FALSE, "No target for unit building activity!");
+        extra_type_by_cause_iterate(punit->activity, pex) {
+          etype = extra_index(pex);
+          break;
+        } extra_type_by_cause_iterate_end;
+        s = t->sprites.extras[etype].rmact;
+      }
       break;
     case ACTIVITY_CONVERT:
       s = t->sprites.unit.convert;
