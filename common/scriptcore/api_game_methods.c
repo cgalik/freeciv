@@ -35,6 +35,7 @@
 #include "unitlist.h"
 #include "unittype.h"
 #include "vision.h"
+#include "workertask.h"
 
 /* common/scriptcore */
 #include "luascript.h"
@@ -403,6 +404,40 @@ int api_methods_caravan_bonus(lua_State *L, City *pcity, City *tcity,
 
   return get_caravan_enter_city_trade_bonus(pcity, tcity, establish);
 }
+
+/*********************************************************************//***
+  Returns a table of worker tasks set for a city
+**************************************************************************/
+lua_Object api_methods_city_worker_tasks(lua_State *L, City *pcity)
+{
+  lua_Object table;
+  int n = 1;
+
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_SELF(L, pcity, 0);
+  
+  lua_createtable(L, worker_task_list_size(pcity->task_reqs), 0);
+  table = lua_gettop(L);
+  
+  worker_task_list_iterate(pcity->task_reqs, ptask) {
+    lua_Object task;
+    lua_createtable(L, 0, 4);
+    task = lua_gettop(L);
+    tolua_pushusertype(L, ptask->ptile, "Tile");
+    lua_setfield(L, task, "tile");
+    tolua_pushstring(L, unit_activity_is_valid(ptask->act)
+                      ? unit_activity_name(ptask->act) : NULL);
+    lua_setfield(L, task, "act");
+    tolua_pushstring(L, ptask->tgt ? extra_rule_name(ptask->tgt) : NULL);
+    lua_setfield(L, task, "tgt");
+    lua_pushinteger(L, ptask->want);
+    lua_setfield(L, task, "want");
+    lua_seti(L, table, n++);
+  } worker_task_list_iterate_end;
+
+  return table;
+}
+
 
 /*********************************************************************//***
   Tells how many citizens are as happy as cat at given level

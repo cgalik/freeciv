@@ -61,6 +61,7 @@ lua_Object api_methods_city_trade_routes(lua_State *L, City *pcity);
 int api_methods_city_trade_with(lua_State *L, City *pcity, City *tcity);
 int api_methods_caravan_bonus(lua_State *L, City *pcity, City *tcity,
                               bool establish);
+lua_Object api_methods_city_worker_tasks(lua_State *L, City *pcity);
 int api_methods_city_happy_count(lua_State *L, City *pcity,
                                  int cat, int level);
 int api_methods_city_map_sq_radius(lua_State *L, City *pcity);

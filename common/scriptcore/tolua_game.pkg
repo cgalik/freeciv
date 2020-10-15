@@ -355,6 +355,8 @@ module City {
       @ supported_count(lua_State *L, City *pcity);
     lua_Object api_methods_city_production
       @ production (lua_State *L, City *pcity);
+    lua_Object api_methods_city_worker_tasks
+      @ worker_tasks (lua_State *L, City *pcity);
   }
 
   bool api_methods_city_has_building
