@@ -166,7 +166,7 @@ module FEELING {
   enum { /* citizen_feeling */
     FEELING_BASE @ BASE,		/* before any of the modifiers below */
     FEELING_LUXURY @ LUXURY,	/* after luxury */
-    FEELING_EFFECT @ FEELING_FINAL,	/* after building effects */
+    FEELING_EFFECT @ EFFECT,	/* after building effects */
     FEELING_NATIONALITY @ NATIONALITY,  /* after citizen nationality effects */
     FEELING_MARTIAL @ MARTIAL,	/* after units enforce martial order */
     FEELING_FINAL @ FINAL	/* after wonders (final result) */
