@@ -1223,6 +1223,7 @@ bool api_methods_tile_city_exists_within_max_city_map(lua_State *L,
 /*****************************************************************************
   Return TRUE if there is a extra with rule name name on ptile.
   If no name is specified return true if there is a extra on ptile.
+  If no extra with such a name, checks resource names.
 *****************************************************************************/
 bool api_methods_tile_has_extra(lua_State *L, Tile *ptile, const char *name)
 {
@@ -1242,7 +1243,12 @@ bool api_methods_tile_has_extra(lua_State *L, Tile *ptile, const char *name)
 
     pextra = extra_type_by_rule_name(name);
 
-    return (NULL != pextra && tile_has_extra(ptile, pextra));
+    if (NULL != pextra) {
+      return tile_has_extra(ptile, pextra));
+    } else {
+      struct resource pres = resource_by_rule_name(name);
+      return (pres != NULL && tile_resource(ptile) == pres);
+    }
   }
 }
 
