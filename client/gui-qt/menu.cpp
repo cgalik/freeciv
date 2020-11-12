@@ -62,7 +62,6 @@
 
 extern QApplication *qapp;
 
-static bool tradecity_rand(const trade_city *t1, const trade_city *t2);
 static void enable_interface(bool enable);
 extern int last_center_enemy;
 extern int last_center_capital;
@@ -300,7 +299,7 @@ void trade_generator::calculate()
 
   for (i = 0; i < 100; i++) {
     tdone = true;
-    qSort(cities.begin(), cities.end(), tradecity_rand);
+    std::random_shuffle(cities.begin(), cities.end());
     lines.clear();
     foreach (tc, cities) {
       tc->pos_cities.clear();
@@ -466,14 +465,6 @@ bool trade_generator::discard_any(trade_city* tc, int freeroutes)
     }
   }
   return false;
-}
-
-/**************************************************************************
-  Helper function ato randomize list
-**************************************************************************/
-bool tradecity_rand(const trade_city *t1, const trade_city *t2)
-{
-  return (qrand() % 2);
 }
 
 /**************************************************************************
