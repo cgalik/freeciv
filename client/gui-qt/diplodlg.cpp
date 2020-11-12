@@ -364,7 +364,7 @@ void diplo_wdg::show_menu(int player)
     if (adv_list.count() > 0) {
       while (adv_iter != adv_list.constEnd()) {
         some_action = adv_menu->addAction(adv_iter.key());
-        qvar = qVariantFromValue((void *) adv_iter.value());
+        qvar = QVariant::fromValue((void *) adv_iter.value());
         some_action->setData(qvar);
         some_action->setProperty("TECH", 1);
         some_action->setProperty("CITY", 0);

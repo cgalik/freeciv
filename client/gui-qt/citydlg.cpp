@@ -33,6 +33,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidgetAction>
+#include <QScreen>
 
 // utility
 #include "support.h"
@@ -275,19 +276,19 @@ void progress_bar::paintEvent(QPaintEvent *event)
     p.setCompositionMode(QPainter::CompositionMode_ColorDodge);
     QFontMetrics fm(*sfont);
 
-    if (fm.width(s1) > rx.width()) {
+    if (fm.horizontalAdvance(s1) > rx.width()) {
       s1 = fm.elidedText(s1, Qt::ElideRight, rx.width());
     }
 
-    i = rx.width() - fm.width(s1) + pix_width;
+    i = rx.width() - fm.horizontalAdvance(s1) + pix_width;
     i = qMax(0, i);
     p.drawText(i / 2, j / 3 + f_size, s1);
 
-    if (fm.width(s2) > rx.width()) {
+    if (fm.horizontalAdvance(s2) > rx.width()) {
       s2 = fm.elidedText(s2, Qt::ElideRight, rx.width());
     }
 
-    i = rx.width() - fm.width(s2) + pix_width;
+    i = rx.width() - fm.horizontalAdvance(s2) + pix_width;
     i = qMax(0, i);
 
     p.drawText(i / 2, height() - j / 3, s2);
@@ -299,11 +300,11 @@ void progress_bar::paintEvent(QPaintEvent *event)
     p.setCompositionMode(QPainter::CompositionMode_ColorDodge);
     QFontMetrics fm(*sfont);
 
-    if (fm.width(s) > rx.width()) {
+    if (fm.horizontalAdvance(s) > rx.width()) {
       s = fm.elidedText(s, Qt::ElideRight, rx.width());
     }
 
-    i = rx.width() - fm.width(s) + pix_width;
+    i = rx.width() - fm.horizontalAdvance(s) + pix_width;
     i = qMax(0, i);
     p.drawText(i / 2, j / 2 + f_size, s);
   }
@@ -2186,7 +2187,7 @@ void city_dialog::showEvent(QShowEvent *event)
     central_left_splitter->restoreState(gui()->qt_settings.city_splitter2);
     central_splitter->restoreState(gui()->qt_settings.city_splitter3);
   } else {
-    QRect rect = QApplication::desktop()->screenGeometry();
+    QRect rect = QApplication::primaryScreen()->geometry();
     resize((rect.width() * 4) / 5, (rect.height() * 5) / 6);
   }
 }
@@ -4200,7 +4201,7 @@ void city_production_model::populate()
       /* renagade deleted in production_item destructor */
       if (VUT_UTYPE == renegade->kind) {
         str = utype_name_translation(renegade->value.utype);
-        sh.setX(qMax(sh.x(), fm.width(str)));
+        sh.setX(qMax(sh.x(), fm.horizontalAdvance(str)));
 
         if (show_units == true) {
           pi = new production_item(renegade, this);
@@ -4208,7 +4209,7 @@ void city_production_model::populate()
         }
       } else {
         str = improvement_name_translation(renegade->value.building);
-        sh.setX(qMax(sh.x(), fm.width(str)));
+        sh.setX(qMax(sh.x(), fm.horizontalAdvance(str)));
 
         if ((is_wonder(renegade->value.building) && show_wonders)
             || (is_improvement(renegade->value.building) && show_buildings)

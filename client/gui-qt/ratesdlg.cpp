@@ -21,6 +21,7 @@
 #include <QGroupBox>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QScreen>
 #include <QVBoxLayout>
 
 // common
@@ -250,7 +251,7 @@ void popup_rates_dialog(void)
   QRect rect;
 
   p = QCursor::pos();
-  rect = QApplication::desktop()->availableGeometry();
+  rect = QApplication::primaryScreen()->availableGeometry();
   tax_rates_dialog *trd = new tax_rates_dialog(gui()->central_wdg);
   p.setY(p.y() - trd->height() / 2);
   if (p.y() < 50) {
