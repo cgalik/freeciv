@@ -250,7 +250,7 @@ const char *research_advance_rule_name(const struct research *presearch,
                 no + 1);
     name = research_future_set_name(future_rule_name, no, buffer);
     fc_assert(name != NULL);
-    fc_assert(name != buffer);
+    fc_assert_ret_val(name != buffer, "<internal error>");/* avoid warning */
     return name;
   }
 
@@ -282,7 +282,7 @@ research_advance_name_translation(const struct research *presearch,
     fc_snprintf(buffer, sizeof(buffer), _("Future Tech. %d"), no + 1);
     name = research_future_set_name(future_name_translation, no, buffer);
     fc_assert(name != NULL);
-    fc_assert(name != buffer);
+    fc_assert_ret_val(name != buffer, "<internal error>");/* avoid warning */
     return name;
   }
 
