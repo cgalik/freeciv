@@ -1244,9 +1244,9 @@ bool api_methods_tile_has_extra(lua_State *L, Tile *ptile, const char *name)
     pextra = extra_type_by_rule_name(name);
 
     if (NULL != pextra) {
-      return tile_has_extra(ptile, pextra));
+      return tile_has_extra(ptile, pextra);
     } else {
-      struct resource pres = resource_by_rule_name(name);
+      struct resource *pres = resource_by_rule_name(name);
       return (pres != NULL && tile_resource(ptile) == pres);
     }
   }
