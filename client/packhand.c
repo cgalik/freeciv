@@ -490,6 +490,9 @@ void handle_unit_combat_info(int attacker_unit_id, int defender_unit_id,
   struct unit *punit0 = game_unit_by_number(attacker_unit_id);
   struct unit *punit1 = game_unit_by_number(defender_unit_id);
 
+  script_client_signal_emit("combat_info", punit0, punit1,
+                            attacker_hp, defender_hp, make_winner_veteran);
+  /* FIXME: may the callback delete the units? */
   if (punit0 && punit1) {
     popup_combat_info(attacker_unit_id, defender_unit_id, attacker_hp,
                       defender_hp, make_winner_veteran);
