@@ -35,6 +35,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidgetAction>
+#include <QScreen>
 
 // utility
 #include "support.h"

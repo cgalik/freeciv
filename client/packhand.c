@@ -76,6 +76,9 @@
 #include "voteinfo_bar_g.h"
 #include "wldlg_g.h"
 
+/* client/luascript */
+#include "script_client.h"
+
 /* client */
 #include "agents.h"
 #include "attribute.h"
@@ -107,6 +110,7 @@ static void city_packet_common(struct city *pcity, struct tile *pcenter,
                                struct tile_list *worked_tiles,
                                bool is_new, bool popup, bool investigate);
 static bool handle_unit_packet_common(struct unit *packet_unit);
+static void client_unit_remove(struct unit *punit);
 
 
 /* The dumbest of cities, placeholders for unknown and unseen cities. */
@@ -379,6 +383,7 @@ void handle_city_remove(int city_id)
 
   need_menus_update = (NULL != get_focus_unit_on_tile(city_tile(pcity)));
 
+  script_client_signal_emit("city_remove", pcity);
   agents_city_remove(pcity);
   editgui_notify_object_changed(OBJTYPE_CITY, pcity->id, TRUE);
   client_remove_city(pcity);
@@ -396,23 +401,32 @@ void handle_city_remove(int city_id)
 void handle_unit_remove(int unit_id)
 {
   struct unit *punit = game_unit_by_number(unit_id);
-  struct unit_list *cargos;
-  struct player *powner;
-  bool need_economy_report_update;
-
   if (!punit) {
     log_error("Server wants us to remove unit id %d, "
               "but we don't know about this unit!",
               unit_id);
-    return;
+  } else {
+    script_client_signal_emit("unit_remove", punit);
+    client_unit_remove(punit);
   }
+}
+
+/**************************************************************************
+  Handle a remove-unit packet, sent by the server to tell us any time a
+  unit is no longer there.
+**************************************************************************/
+static void client_unit_remove(struct unit *punit)
+{
+  struct unit_list *cargos;
+  struct player *powner;
+  bool need_economy_report_update;
 
   /* Close diplomat dialog if the diplomat is lost */
   if (action_selection_actor_unit() == punit->id) {
     action_selection_close();
     /* Open another action selection dialog if there are other actors in the
      * current selection that want a decision. */
-    action_selection_next_in_focus(unit_id);
+    action_selection_next_in_focus(punit->id);
   }
 
   need_economy_report_update = (0 < punit->upkeep[O_GOLD]);
@@ -478,6 +492,9 @@ void handle_unit_combat_info(int attacker_unit_id, int defender_unit_id,
   struct unit *punit0 = game_unit_by_number(attacker_unit_id);
   struct unit *punit1 = game_unit_by_number(defender_unit_id);
 
+  script_client_signal_emit("combat_info", punit0, punit1,
+                            attacker_hp, defender_hp, make_winner_veteran);
+  /* FIXME: may the callback delete the units? */
   if (punit0 && punit1) {
     popup_combat_info(attacker_unit_id, defender_unit_id, attacker_hp,
                       defender_hp, make_winner_veteran);
@@ -569,7 +586,7 @@ void handle_city_info(const struct packet_city_info *packet)
   struct tile_list *worked_tiles = NULL;
   struct tile *pcenter = index_to_tile(packet->tile);
   struct tile *ptile = NULL;
-  struct player *powner = player_by_number(packet->owner);
+  struct player *powner = player_by_number(packet->owner), *ploser = NULL;
 
   fc_assert_ret_msg(NULL != powner, "Bad player number %d.", packet->owner);
   fc_assert_ret_msg(NULL != pcenter, "Invalid tile index %d.", packet->tile);
@@ -601,7 +618,7 @@ void handle_city_info(const struct packet_city_info *packet)
       ptile = pcenter;
       pcity->owner = powner;
       pcity->original = powner;
-    } else if (city_owner(pcity) != powner) {
+    } else if ((ploser = city_owner(pcity)) != powner) {
       /* Remember what were the worked tiles.  The server won't
        * send to us again. */
       city_tile_iterate_skip_free_worked(city_map_radius_sq_get(pcity),
@@ -825,8 +842,13 @@ void handle_city_info(const struct packet_city_info *packet)
   city_packet_common(pcity, pcenter, powner, worked_tiles,
                      city_is_new, popup, packet->diplomat_investigate);
 
-  if (city_is_new && !city_has_changed_owner) {
-    agents_city_new(pcity);
+  if (city_is_new) {
+    if (city_has_changed_owner) {
+      script_client_signal_emit("city_transferred", pcity, powner, ploser);
+    } else {
+      script_client_signal_emit("city_create", pcity);
+      agents_city_new(pcity);
+    }
   } else {
     agents_city_changed(pcity);
   }
@@ -927,6 +949,20 @@ static void city_packet_common(struct city *pcity, struct tile *pcenter,
     refresh_city_mapcanvas(pcity, pcenter, FALSE, FALSE);
   }
 
+  if (powner != client_player()) {
+    /* Wild guess: the player knows all the tiles around the city */
+    /* (needed for assumptions if the city may work its tiles) */
+    int vr_sq = get_city_bonus(pcity, EFT_CITY_VISION_RADIUS_SQ);
+    int wr_sq = game.info.init_city_radius_sq
+                + get_city_bonus(pcity, EFT_CITY_RADIUS_SQ);
+    vr_sq = MAX(vr_sq, wr_sq);
+    vr_sq = MAX(vr_sq, city_map_radius_sq_get(pcity));
+    vr_sq = MAX(vr_sq, 2); /* just to be sure */
+    circle_iterate(pcenter, vr_sq, t) {
+      dbv_set(&powner->tile_known, tile_index(t));
+    } circle_iterate_end;
+  }
+
   if (city_workers_display==pcity)  {
     city_workers_display=NULL;
   }
@@ -992,14 +1028,15 @@ static void city_packet_common(struct city *pcity, struct tile *pcenter,
 void handle_city_short_info(const struct packet_city_short_info *packet)
 {
   bool city_has_changed_owner = FALSE;
-  bool city_is_new = FALSE;
+  bool city_is_new = FALSE; /* Either we saw a city never seen before */
+    /* or the city has changed its owner and we delete old - create new */
   bool name_changed = FALSE;
   bool update_descriptions = FALSE;
   struct city *pcity = game_city_by_number(packet->id);
   struct tile *pcenter = index_to_tile(packet->tile);
   struct tile *ptile = NULL;
   struct tile_list *worked_tiles = NULL;
-  struct player *powner = player_by_number(packet->owner);
+  struct player *powner = player_by_number(packet->owner), *ploser = NULL;
   int radius_sq = game.info.init_city_radius_sq;
 
   fc_assert_ret_msg(NULL != powner, "Bad player number %d.", packet->owner);
@@ -1027,7 +1064,7 @@ void handle_city_short_info(const struct packet_city_short_info *packet)
           }
         }
       } whole_map_iterate_end;
-    } else if (city_owner(pcity) != powner) {
+    } else if ((ploser = city_owner(pcity)) != powner) {
       /* Remember what were the worked tiles.  The server won't
        * send to us again. */
       city_tile_iterate_skip_free_worked(city_map_radius_sq_get(pcity), ptile,
@@ -1107,8 +1144,51 @@ void handle_city_short_info(const struct packet_city_short_info *packet)
   city_packet_common(pcity, pcenter, powner, worked_tiles,
                      city_is_new, FALSE, FALSE);
 
-  if (city_is_new && !city_has_changed_owner) {
-    agents_city_new(pcity);
+  /* Make some guessing about what is the city's trade output 
+   * for trade route planning */
+  /* FIXME: reading wrong union branch! */
+  if (game.server.trade_revenue_style == TRS_SIMPLE) {
+    int base_trade = 0;
+    int wc = 0, uc = 0;
+    int sz = packet->size;
+    int ttr[MAX_CITY_SIZE];
+    circle_iterate(pcenter, radius_sq, ct) {
+      if (pcity == tile_worked(ct)) {
+        if (ct != pcenter) {
+          wc++;
+        }
+        base_trade += city_tile_output_now(pcity, ct, O_TRADE);
+      } else if (city_can_work_tile(pcity, ct) && client_player()
+                 && TILE_KNOWN_UNSEEN
+                    == tile_get_known(ct, client_player())){
+        /* We know that a good tile is here, maybe the city works it? */
+        int i = uc;
+        int nto = city_tile_output_now(pcity, ct, O_TRADE);
+        if (i == 0 || nto > ttr[i - 1] || uc + wc < sz) {
+          while (i > 0 && nto > ttr[i - 1]) {
+            ttr[i] = ttr[i - 1];
+            i--;
+          }
+          ttr[i] = nto;
+          uc++;
+        }
+      }
+    } circle_iterate_end;
+    if (wc < sz) {
+      uc = MIN(uc - 1, sz - wc);
+      while (uc >= 0) {
+        base_trade += ttr[uc--];
+      }
+    }
+    pcity->citizen_base[O_TRADE] = base_trade;
+  }
+  if (city_is_new) {
+    if (city_has_changed_owner) {
+      script_client_signal_emit("city_transferred", pcity, powner, ploser);
+    } else {
+      script_client_signal_emit("city_create", pcity);
+      agents_city_new(pcity);
+    }
   } else {
     agents_city_changed(pcity);
   }
@@ -1496,13 +1576,65 @@ static bool handle_unit_packet_common(struct unit *packet_unit)
   bool ret = FALSE;
 
   punit = player_unit_by_number(unit_owner(packet_unit), packet_unit->id);
-  if (!punit && game_unit_by_number(packet_unit->id)) {
-    /* This means unit has changed owner. We deal with this here
-     * by simply deleting the old one and creating a new one. */
-    handle_unit_remove(packet_unit->id);
-  }
+  if (!punit) {
+    struct unit *existing = game_unit_by_number(packet_unit->id);
+    if (existing) {
+      /* This means unit has changed owner. We deal with this here
+       * by simply deleting the old one and creating a new one. */
+      script_client_signal_emit("unit_captured", existing,
+                                unit_owner(packet_unit));
+      client_unit_remove(existing);
+    }
+    /*** Create new unit ***/
+    punit = packet_unit;
+    idex_register_unit(punit);
 
-  if (punit) {
+    unit_list_prepend(unit_owner(punit)->units, punit);
+    unit_list_prepend(unit_tile(punit)->units, punit);
+
+    unit_register_battlegroup(punit);
+
+    if ((pcity = game_city_by_number(punit->homecity))) {
+      unit_list_prepend(pcity->units_supported, punit);
+    }
+
+    log_debug("New %s %s id %d (%d %d) hc %d %s",
+              nation_rule_name(nation_of_unit(punit)),
+              unit_rule_name(punit), TILE_XY(unit_tile(punit)),
+              punit->id, punit->homecity,
+              (pcity ? city_name_get(pcity) : "(unknown)"));
+
+    repaint_unit = !unit_transported(punit);
+    agents_unit_new(punit);
+
+    /* Check if we should link cargo units.
+     * (This might be necessary if the cargo info was sent to us before
+     * this transporter.) */
+    if (punit->client.occupied) {
+      unit_list_iterate(unit_tile(punit)->units, aunit) {
+        if (aunit->client.transported_by == punit->id) {
+          fc_assert(aunit->transporter == NULL);
+          unit_transport_load(aunit, punit, TRUE);
+        }
+      } unit_list_iterate_end;
+    }
+
+    if ((pcity = tile_city(unit_tile(punit)))) {
+      /* The unit is in a city - obviously it's occupied. */
+      pcity->client.occupied = TRUE;
+    }
+
+    script_client_signal_emit("unit_create", punit);
+
+    if (should_ask_server_for_actions(punit)) {
+      /* The unit wants the player to decide. */
+      action_decision_request(punit);
+      check_focus = TRUE;
+    }
+
+    need_units_report_update = TRUE;
+    /*** End of Create new unit ***/
+  } else {
     /* In some situations, the size of repaint units require can change;
      * in particular, city-builder units sometimes get a potential-city
      * outline, but to speed up redraws we don't repaint this whole area
@@ -1718,6 +1850,8 @@ static bool handle_unit_packet_common(struct unit *packet_unit)
           refresh_city_dialog(ccity);
         }
       }
+      script_client_signal_emit("unit_moved", 
+                                punit, old_tile, unit_tile(punit));
 
     }  /*** End of Change position. ***/
 
@@ -1764,54 +1898,7 @@ static bool handle_unit_packet_common(struct unit *packet_unit)
       check_focus = TRUE;
     }
     punit->action_decision_want = packet_unit->action_decision_want;
-  } else {
-    /*** Create new unit ***/
-    punit = packet_unit;
-    idex_register_unit(punit);
-
-    unit_list_prepend(unit_owner(punit)->units, punit);
-    unit_list_prepend(unit_tile(punit)->units, punit);
-
-    unit_register_battlegroup(punit);
-
-    if ((pcity = game_city_by_number(punit->homecity))) {
-      unit_list_prepend(pcity->units_supported, punit);
-    }
-
-    log_debug("New %s %s id %d (%d %d) hc %d %s",
-              nation_rule_name(nation_of_unit(punit)),
-              unit_rule_name(punit), TILE_XY(unit_tile(punit)),
-              punit->id, punit->homecity,
-              (pcity ? city_name_get(pcity) : "(unknown)"));
-
-    repaint_unit = !unit_transported(punit);
-    agents_unit_new(punit);
-
-    /* Check if we should link cargo units.
-     * (This might be necessary if the cargo info was sent to us before
-     * this transporter.) */
-    if (punit->client.occupied) {
-      unit_list_iterate(unit_tile(punit)->units, aunit) {
-        if (aunit->client.transported_by == punit->id) {
-          fc_assert(aunit->transporter == NULL);
-          unit_transport_load(aunit, punit, TRUE);
-        }
-      } unit_list_iterate_end;
-    }
-
-    if ((pcity = tile_city(unit_tile(punit)))) {
-      /* The unit is in a city - obviously it's occupied. */
-      pcity->client.occupied = TRUE;
-    }
-
-    if (should_ask_server_for_actions(punit)) {
-      /* The unit wants the player to decide. */
-      action_decision_request(punit);
-      check_focus = TRUE;
-    }
-
-    need_units_report_update = TRUE;
-  } /*** End of Create new unit ***/
+  }
 
   fc_assert_ret_val(punit != NULL, ret);
 

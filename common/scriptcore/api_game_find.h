@@ -20,14 +20,15 @@ extern "C" {
 
 /* dependencies/lua */
 #include "lua.h"
+#include "tolua.h"
 
 /* common/scriptcore */
 #include "luascript_types.h"
 
 /* Object find module. */
-Player *api_find_player(lua_State *L, int player_id);
+Player *api_find_player(lua_State *L, lua_Object plr);
 
-City *api_find_city(lua_State *L, Player *pplayer, int city_id);
+City *api_find_city(lua_State *L, lua_Object plr, lua_Object cty);
 
 Unit *api_find_unit(lua_State *L, Player *pplayer, int unit_id);
 Unit *api_find_transport_unit(lua_State *L, Player *pplayer, Unit_Type *ptype,
@@ -53,6 +54,15 @@ Tech_Type *api_find_tech_type_by_name(lua_State *L, const char *name_orig);
 
 Terrain *api_find_terrain(lua_State *L, int terrain_id);
 Terrain *api_find_terrain_by_name(lua_State *L, const char *name_orig);
+
+Action *api_find_action_by_name(lua_State *L, const char *action_name);
+Action *api_find_action_by_id(lua_State *L, int actn_id);
+
+Achievement *api_find_achievement(lua_State *L, int id);
+
+Disaster *api_find_disaster(lua_State *L, int id);
+
+const Direction *api_find_direction (lua_State *L, int id);
 
 Nonexistent *api_find_nonexistent(lua_State *L);
 

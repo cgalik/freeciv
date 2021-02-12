@@ -466,6 +466,38 @@ static const struct sset_val_name *barbarians_name(int barbarians)
 }
 
 /****************************************************************************
+  Bombardment reveal mode accessor.
+****************************************************************************/
+static const struct sset_val_name *brem_name(int brem_type)
+{
+  switch (brem_type) {
+  NAME_CASE(BREM_ALL, "ALL", N_("All defenders and bombarder"));
+  NAME_CASE(BREM_BEST, "BEST", N_("Strongest defender and bombarder"));
+  NAME_CASE(BREM_ATTACKER, "ATTACKER", N_("Bombarder only"));
+  NAME_CASE(BREM_NONE, "NONE", N_("No units otherwise invisible"));
+  }
+  return NULL;
+}
+
+/****************************************************************************
+  Visibility in transports mode accessor.
+****************************************************************************/
+static const struct sset_val_name *vistr_name(int vistr_type)
+{
+  switch (vistr_type) {
+  NAME_CASE(VISTR_NONE, "NONE",
+            N_("Non-allied units in transports are hidden"));
+  NAME_CASE(VISTR_FORTIF, "FORTIFY",
+            N_("A transported unit reveals itself fortifying or fortified"));
+  NAME_CASE(VISTR_ACT, "ACTIVITIES",
+            N_("Any interaction with the terrain reveals transported units")
+           );
+  NAME_CASE(VISTR_ALL, "ALL", N_("Transports don't hide their cargo"));
+  }
+  return NULL;
+}
+
+/****************************************************************************
   Revolution length type setting names accessor.
 ****************************************************************************/
 static const struct sset_val_name *revolentype_name(int revolentype)
@@ -2114,6 +2146,14 @@ static struct setting settings[] = {
           NULL, NULL, NULL,
           GAME_MIN_OCCUPYCHANCE, GAME_MAX_OCCUPYCHANCE, 
           GAME_DEFAULT_OCCUPYCHANCE)
+  
+  GEN_ENUM("bombardment_reveal", game.server.bombardment_reveal,
+           SSET_RULES, SSET_MILITARY, SSET_RARE, SSET_TO_CLIENT,
+           N_("Reveal units on bombardment"),
+           N_("Bombardment may reveal some units (the bombarder or "
+              "the defenders) to players that otherwise can not see them "
+              "but can see either the bombarder's or the bombarded tile"),
+           NULL, NULL, NULL, brem_name, GAME_DEFAULT_BOMBARDMENT_REVEAL)
 
   GEN_BOOL("autoattack", game.server.autoattack, SSET_RULES_FLEXIBLE, SSET_MILITARY,
            SSET_SITUATIONAL, SSET_TO_CLIENT,
@@ -2295,6 +2335,16 @@ static struct setting settings[] = {
               "can see any or all changes to borders as long as they "
               "have previously seen the tiles."),
            NULL, NULL, GAME_DEFAULT_FOGGEDBORDERS)
+
+  GEN_ENUM("cargo_visibility",
+           game.server.cargo_visibility,
+           SSET_RULES, SSET_MILITARY, SSET_RARE, SSET_TO_CLIENT,
+           N_("What non-allied units can be visible inside transports"),
+           N_("This setting governs the visibility of non-allied units "
+              "loaded into transports that would be visible if not loaded."
+              "\nYou can show none of them, ones doing specific activities"
+              " or even all of them."),
+           NULL, NULL, NULL, vistr_name, VISTR_NONE)
 
   GEN_BITWISE("airliftingstyle", game.info.airlifting_style,
               SSET_RULES_FLEXIBLE, SSET_MILITARY, SSET_SITUATIONAL,

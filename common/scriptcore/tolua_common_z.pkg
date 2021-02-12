@@ -50,8 +50,10 @@ do
     "Unit_List_Link",
     "Unit_Type",
     "Disaster",
+    "Direction",
     "Achievement",
-    "Action"
+    "Action",
+    "Terrain_Misc"
   }
 
   local function id_eq (o1, o2)

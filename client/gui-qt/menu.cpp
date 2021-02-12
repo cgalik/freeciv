@@ -473,7 +473,7 @@ bool trade_generator::discard_any(trade_city* tc, int freeroutes)
 
 /**************************************************************************
   Inner foreach() loop of trade_generator::find_certain_routes()
-  Implemented as separate function to avoid shadow warnings about
+  Helper function ato randomize list
   internal variables of foreach() inside foreach()
 **************************************************************************/
 void trade_generator::find_certain_routes_inner(trade_city *tc)

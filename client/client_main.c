@@ -1350,6 +1350,21 @@ static bool client_map_is_known_and_seen(const struct tile *ptile,
   return dbv_isset(&pplayer->client.tile_vision[vlayer], tile_index(ptile));
 }
 
+/*****************************************************************//********
+  Returns the id of the city the player believes exists at 'ptile'
+  (Backport from 3.0)
+***************************************************************************/
+static int client_plr_tile_city_id_get(const struct tile *ptile,
+                                       const struct player *pplayer)
+{
+  struct city *pcity = tile_city(ptile);
+
+  /* Can't look up what other players think. */
+  fc_assert(pplayer == client_player());
+
+  return pcity ? pcity->id : IDENTITY_NUMBER_ZERO;
+}
+
 /***************************************************************
   Initialize client specific functions.
 ***************************************************************/
@@ -1360,6 +1375,7 @@ static void fc_interface_init_client(void)
   funcs->create_extra = NULL;
   funcs->destroy_extra = NULL;
   funcs->player_tile_vision_get = client_map_is_known_and_seen;
+  funcs->player_tile_city_id_get = client_plr_tile_city_id_get;
   funcs->gui_color_free = color_free;
 
   /* Keep this function call at the end. It checks if all required functions

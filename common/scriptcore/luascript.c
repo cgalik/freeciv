@@ -421,6 +421,8 @@ void luascript_log_vargs(struct fc_lua *fcl, enum log_level level,
 
 /*****************************************************************************
   Pop return values from the Lua stack.
+  Lua values (currently, tables for API_TYPE_TABLE) are pushed back
+  into the stack to be referrable (but only if a table actually was there).
 *****************************************************************************/
 void luascript_pop_returns(struct fc_lua *fcl, const char *func_name,
                            int nreturns, enum api_types *preturn_types,
@@ -432,6 +434,9 @@ void luascript_pop_returns(struct fc_lua *fcl, const char *func_name,
   fc_assert_ret(fcl);
   fc_assert_ret(fcl->state);
   L = fcl->state;
+  fc_assert_ret_msg(lua_gettop(L) >= nreturns,
+                    "Stack contains %d values, %d wanted",
+                    nreturns, lua_gettop(L));
 
   for (i = 0; i < nreturns; i++) {
     enum api_types type = preturn_types[i];
@@ -466,11 +471,34 @@ void luascript_pop_returns(struct fc_lua *fcl, const char *func_name,
           }
         }
         break;
+      case API_TYPE_TABLE:
+        {
+          lua_Object *pres = va_arg(args, lua_Object*);
+          if (!lua_istable(L, -1)) {
+            log_error("Return value from lua function %s is a %s, want table",
+                      func_name, lua_typename(L, lua_type(L, -1)));
+          } else {
+            /* Put it into the bottom of the used stack lifting the rest */
+            int j;
+            
+            if (1 == nreturns - i) {
+              *pres = lua_gettop(L);
+              continue; /* just skip popping */
+            }
+            lua_pushvalue(L, -1); /* [a b c X X] */
+            for (j = -2; j >= i - nreturns; j--) {
+              lua_copy(L, j - 1, j);
+            } /* [a a b c X] */
+            lua_copy(L, -1,  j); /* [X a b c X] */
+            *pres = lua_absindex(L, j);
+          }
+        }
+        break;
       default:
         {
           void **pres = va_arg(args, void**);
 
-          *pres = tolua_tousertype(fcl->state, -1, NULL);
+          *pres = tolua_tousertype(L, -1, NULL);
         }
         break;
     }
@@ -513,6 +541,13 @@ void luascript_push_args(struct fc_lua *fcl, int nargs,
           lua_pushstring(fcl->state, arg);
         }
         break;
+      case API_TYPE_TABLE:
+        {
+          lua_Object arg = va_arg(args, lua_Object);
+          fc_assert(lua_type(fcl->state, arg) == LUA_TTABLE);
+          lua_pushvalue(fcl->state, arg);
+        }
+        break;
       default:
         {
           const char *name;
@@ -526,6 +561,145 @@ void luascript_push_args(struct fc_lua *fcl, int nargs,
         break;
     }
   }
+}
+
+/***********************************************************************//****
+  API type corresponding to a table value by string key
+*****************************************************************************/
+enum api_types luascript_field_api_type(lua_State *L, int t, const char* f) {
+  enum api_types res;
+
+  fc_assert_ret_val(L, api_types_invalid());
+  fc_assert_ret_val(lua_type(L, t) == LUA_TTABLE, api_types_invalid());
+  lua_getfield(L, t, f);
+  res = luascript_value_api_type(L, -1);
+  lua_pop(L, 1);
+  
+  return res;
+}
+
+/***********************************************************************//****
+  API type corresponding to a table value by integer key
+*****************************************************************************/
+enum api_types luascript_index_api_type(lua_State *L, int t, int i) {
+  enum api_types res;
+
+  fc_assert_ret_val(L, api_types_invalid());
+  fc_assert_ret_val(lua_type(L, t) == LUA_TTABLE, api_types_invalid());
+  lua_geti(L, t, i);
+  res = luascript_value_api_type(L, -1);
+  lua_pop(L, 1);
+  
+  return res;
+}
+
+/***********************************************************************//****
+  Gets value of a specific type from a table by string key to a variable.
+  If the value type does not match apit, does not change args and
+  logs out an error using table name n if not NULL.
+  Uses raw table access but for some types may use conversion metamethod.
+*****************************************************************************/
+void luascript_table_rawgetfield(struct fc_lua *M, int t, const char *n,
+                                 const char* f,
+                                 enum api_types apit, va_list args) {
+  char buf[1024];
+  lua_State *L;
+  
+  fc_assert_ret(M);
+  L = M->state;
+  fc_assert_ret(L);
+  fc_assert_ret(lua_type(L, t) == LUA_TTABLE);
+  
+  t = lua_absindex(L, t);
+  lua_pushstring(L, f);
+  lua_rawget(L, t);
+  fc_snprintf(buf, sizeof(buf), "%s.%s", n ? n : "", f);
+  luascript_pop_returns(M, buf, 1, &apit, args);
+}
+
+/***********************************************************************//****
+  Gets value of a specific type from a table by integer key to a variable.
+  If the value type does not match apit, does not change args and
+  logs out an error using table name n if not NULL.
+  Uses raw table access but for some types may use conversion metamethod.
+*****************************************************************************/
+void luascript_table_rawgeti(struct fc_lua *M, int t, const char *n, int i,
+                             enum api_types apit, va_list args) {
+  char buf[1024];
+  lua_State *L;
+
+  fc_assert_ret(M);
+  L = M->state;
+  fc_assert_ret(L);
+  fc_assert_ret(lua_type(L, t) == LUA_TTABLE);
+  
+  lua_rawgeti(L, t, i);
+  fc_snprintf(buf, sizeof(buf), "%s[%d]", n ? n : "", i);
+  luascript_pop_returns(M, buf, 1, &apit, args);
+}
+
+/***********************************************************************//****
+  Adds a string key to a table.
+  Uses raw table access.
+*****************************************************************************/
+void luascript_rawsetfield(struct fc_lua *M, int t, const char *f,
+                           enum api_types vt, va_list args) {
+  lua_State *L;
+
+  fc_assert_ret(M);
+  L = M->state;
+  fc_assert_ret(L);
+  fc_assert_ret(lua_type(L, t) == LUA_TTABLE);
+
+  lua_pushstring(L, f);
+  luascript_push_args(M, 1, &vt, args);
+  lua_rawset(L, t);
+}
+
+/***********************************************************************//****
+  Adds a string key to a table.
+  Uses raw table access.
+*****************************************************************************/
+void luascript_rawseti(struct fc_lua *M, int t, int i,
+                       enum api_types vt, va_list args) {
+  lua_State *L;
+
+  fc_assert_ret(M);
+  L = M->state;
+  fc_assert_ret(L);
+  fc_assert_ret(lua_type(L, t) == LUA_TTABLE);
+
+  luascript_push_args(M, 1, &vt, args);
+  lua_rawseti(L, t, i);
+}
+
+/***********************************************************************//****
+  Gets number of elements in a sequence (raw way).
+*****************************************************************************/
+int luascript_rawlen(lua_State *L, int t) {
+  int lenval;
+
+  fc_assert_ret_val(L, 0);
+  fc_assert_ret_val(lua_type(L, t) == LUA_TTABLE, 0);
+
+  lua_rawlen(L, t);
+  lenval = lua_tointeger(L, -1);
+  lua_pop(L, 1);
+  return lenval;
+}
+
+/***********************************************************************//****
+  Truncates the stack, removing obj and everything to the end.
+*****************************************************************************/
+void luascript_trunc(lua_State *L, int obj) {
+  fc_assert_ret(L);
+
+  fc_assert_ret_msg(obj && (abs(obj) <= lua_gettop(L)),
+                    "Attempt to truncate to %d a Lua state"
+                    " not containing this position", obj);
+  log_verbose("Clearing %d values from fcl_main->state",
+              0 <= obj ? lua_gettop(L) - obj  + 1 : -obj);
+  lua_settop(L, obj - 1);
 }
 
 /*****************************************************************************
@@ -543,6 +717,36 @@ bool luascript_check_function(struct fc_lua *fcl, const char *funcname)
   lua_pop(fcl->state, 1);
 
   return defined;
+}
+
+/*****************************************************************************
+  Return what type of enum api_types corresponds to the type of obj in L.
+  Returns api_types_invalid() if no corresponding type found (nil included).
+*****************************************************************************/
+enum api_types luascript_value_api_type(lua_State *L, int obj)
+{
+  fc_assert_ret_val(L, api_types_invalid());
+  
+  switch (lua_type(L, obj)) {
+  case LUA_TNUMBER:
+    {
+      int isnum;
+      lua_tointegerx(L, obj, &isnum);
+      if (isnum) {
+        return API_TYPE_INT; /* Yes, all numbers are converted to integer */
+      } else {
+        return api_types_invalid(); /* Conversion impossible */
+      }
+    }
+  case LUA_TBOOLEAN:
+    return API_TYPE_BOOL;
+  case LUA_TSTRING:
+    return API_TYPE_STRING;
+  case LUA_TTABLE:
+    return API_TYPE_TABLE;
+  default:
+    return api_types_by_name(tolua_typename(L, obj), &fc_strcasecmp);
+  }
 }
 
 /*****************************************************************************
@@ -630,6 +834,49 @@ int luascript_do_file(struct fc_lua *fcl, const char *filename)
   return status;
 }
 
+/*************************************************************************//**
+  Invoke the 'callback_name' Lua function on nargs stack values.
+  The callback will operate on a copy of the values.
+*****************************************************************************/
+bool luascript_callback_invoke_stack(struct fc_lua *fcl,
+                                     const char *callback_name, int nargs)
+{
+  bool stop_emission = FALSE;
+  int funcpos;
+
+  fc_assert_ret_val(fcl, FALSE);
+  fc_assert_ret_val(fcl->state, FALSE);
+
+  /* The function name */
+  lua_getglobal(fcl->state, callback_name);
+
+  if (!lua_isfunction(fcl->state, -1)) {
+    luascript_log(fcl, LOG_ERROR, "lua error: Unknown callback '%s'",
+                  callback_name);
+    lua_pop(fcl->state, 1);
+    return FALSE;
+  }
+
+  luascript_log(fcl, LOG_DEBUG, "lua callback: '%s'", callback_name);
+
+  funcpos = lua_gettop(fcl->state);
+  for (int i = funcpos - nargs; i < funcpos; i++) {
+    lua_pushvalue(fcl->state, i);
+  }
+
+  /* Call the function with nargs arguments, return 1 results */
+  if (luascript_call(fcl, nargs, 1, NULL)) {
+    return FALSE;
+  }
+
+  /* Shall we stop the emission of this signal? */
+  if (lua_isboolean(fcl->state, -1)) {
+    stop_emission = lua_toboolean(fcl->state, -1);
+  }
+  lua_pop(fcl->state, 1);   /* pop return value */
+
+  return stop_emission;
+}
 
 /*****************************************************************************
   Invoke the 'callback_name' Lua function.

@@ -1031,14 +1031,18 @@ action_enabled_local(const enum gen_action wanted_action,
     current = fc_tristate_and(mke_eval_reqs(actor_player, actor_player,
                                             target_player, actor_city,
                                             actor_building, actor_tile,
-                                            actor_unit, actor_output,
+                                            actor_unit,
+                                            unit_type_get(actor_unit),
+                                            actor_output,
                                             actor_specialist,
                                             &enabler->actor_reqs,
                                             RPT_CERTAIN),
                               mke_eval_reqs(actor_player, target_player,
                                             actor_player, target_city,
                                             target_building, target_tile,
-                                            target_unit, target_output,
+                                            target_unit,
+                                            unit_type_get(target_unit),
+                                            target_output,
                                             target_specialist,
                                             &enabler->target_reqs,
                                             RPT_CERTAIN));
@@ -1050,38 +1054,6 @@ action_enabled_local(const enum gen_action wanted_action,
   } action_enabler_list_iterate_end;
 
   return result;
-}
-
-/**************************************************************************
-  Find out if the effect value is known
-
-  The knowledge of the actor is assumed to be given in the parameters.
-
-  If meta knowledge is missing TRI_MAYBE will be returned.
-**************************************************************************/
-static bool is_effect_val_known(enum effect_type effect_type,
-                                const struct player *pow_player,
-                                const struct player *target_player,
-                                const struct player *other_player,
-                                const struct city *target_city,
-                                const struct impr_type *target_building,
-                                const struct tile *target_tile,
-                                const struct unit *target_unit,
-                                const struct output_type *target_output,
-                                const struct specialist *target_specialist)
-{
-  effect_list_iterate(get_effects(effect_type), peffect) {
-    if (TRI_MAYBE == mke_eval_reqs(pow_player, target_player,
-                                   other_player, target_city,
-                                   target_building, target_tile,
-                                   target_unit, target_output,
-                                   target_specialist,
-                                   &(peffect->reqs), RPT_CERTAIN)) {
-      return FALSE;
-    }
-  } effect_list_iterate_end;
-
-  return TRUE;
 }
 
 /**************************************************************************
@@ -1177,7 +1149,7 @@ static struct act_prob ap_dipl_battle_win(const struct unit *pattacker,
   if (pcity) {
     if (!is_effect_val_known(EFT_SPY_RESISTANT, unit_owner(pattacker),
                              city_owner(pcity),  NULL, pcity, NULL,
-                             city_tile(pcity), NULL, NULL, NULL)) {
+                             city_tile(pcity), NULL, NULL, NULL, NULL)) {
       return ACTPROB_NOT_KNOWN;
     }
 

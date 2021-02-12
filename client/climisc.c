@@ -55,7 +55,7 @@
 /* client */
 #include "client_main.h"
 #include "climap.h"
-#include "climisc.h"
+#include "script_client.h"
 #include "control.h"
 #include "mapctrl_common.h"
 #include "mapview_common.h"
@@ -65,6 +65,7 @@
 #include "repodlgs_common.h"
 #include "tilespec.h"
 
+#include "climisc.h"
 
 /**************************************************************************
   Remove unit, client end version
@@ -947,6 +948,8 @@ void handle_event(const char *featured_text, struct tile *ptile,
   char plain_text[MAX_LEN_MSG];
   struct text_tag_list *tags;
   int where = MW_OUTPUT;	/* where to display the message */
+  int objs;
+  int obj_count = 0;
   bool fallback_needed = FALSE; /* we want fallback if actual 'where' is not
                                  * usable */
   bool shown = FALSE;           /* Message displayed somewhere at least */
@@ -963,13 +966,30 @@ void handle_event(const char *featured_text, struct tile *ptile,
                               sizeof(plain_text), &tags, conn_id != -1);
 
   /* Display link marks when an user is pointed us something. */
-  if (conn_id != -1) {
-    text_tag_list_iterate(tags, ptag) {
-      if (text_tag_type(ptag) == TTT_LINK) {
-        link_mark_add_new(text_tag_link_type(ptag), text_tag_link_id(ptag));
+  objs = script_client_newtable();
+  text_tag_list_iterate(tags, ptag) {
+    if (text_tag_type(ptag) == TTT_LINK) {
+      int id = text_tag_link_id(ptag);
+      if (conn_id != -1) {
+        link_mark_add_new(text_tag_link_type(ptag), id);
       }
-    } text_tag_list_iterate_end;
-  }
+      switch(text_tag_link_type(ptag)){
+      case TLT_CITY:
+        script_client_table_seti(objs, ++obj_count, API_TYPE_CITY,
+                                    game_city_by_number(id));
+        break;
+      case TLT_TILE:
+        script_client_table_seti(objs, ++obj_count, API_TYPE_TILE,
+                                    index_to_tile(id));
+        break;
+      case TLT_UNIT:
+        script_client_table_seti(objs, ++obj_count, API_TYPE_UNIT,
+                                    game_unit_by_number(id));
+        break;
+      }
+    }
+  } text_tag_list_iterate_end;
+
 
   /* Maybe highlight our player and user names if someone is talking
    * about us. */
@@ -1019,6 +1039,33 @@ void handle_event(const char *featured_text, struct tile *ptile,
       }
     }
   }
+
+  script_client_signal_emit("event", &plain_text, ptile, event, turn,
+                            conn_get_player(conn_by_number(conn_id)), objs);
+  /* Use the table to override message showing method, or hide it */
+  if (api_types_is_valid(script_client_table_field_type(objs, "show"))) {
+    bool show;
+    script_client_table_n_getfield(objs, "objs", "show",
+                                   API_TYPE_BOOL, &show);
+    if (show && !(where & (MW_POPUP | MW_MESSAGES | MW_OUTPUT))) {
+      char *dest = NULL;
+      script_client_table_n_getfield(objs, "objs", "show",
+                                     API_TYPE_STRING, &dest);
+      if (fc_strcasecmp(dest, "POPUP")) {
+        where = MW_POPUP;
+      } else if (fc_strcasecmp(dest, "MESSAGES")) {
+        where = MW_MESSAGES;
+      } else {
+        where = MW_OUTPUT;
+        if (dest) {
+          FC_FREE(dest);
+        }
+      }
+    } else if (!show) {
+      where = 0;
+    }
+  }
+  script_client_obj_done(objs);
 
   /* Popup */
   if (BOOL_VAL(where & MW_POPUP)) {
@@ -1467,16 +1514,17 @@ void client_player_maps_reset(void)
       new_size = MAP_INDEX_SIZE;
     } else {
       /* We don't need (or have) information about players other
-       * than user of the client. Allocate just one bit as that's
-       * the minimum bitvector size (cannot allocate 0 bits)*/
+       * than user of the client. But we need some assumptions
+       * for city_can_work_tile()*/
       new_size = 1;
     }
 
     vision_layer_iterate(v) {
-      dbv_resize(&pplayer->client.tile_vision[v], new_size);
+      dbv_resize(&pplayer->client.tile_vision[v], 
+                 V_MAIN == v ? MAP_INDEX_SIZE : new_size);
     } vision_layer_iterate_end;
 
-    dbv_resize(&pplayer->tile_known, new_size);
+    dbv_resize(&pplayer->tile_known, MAP_INDEX_SIZE);
   } players_iterate_end;
 }
 

@@ -136,7 +136,7 @@ static TString *createstrobj (lua_State *L, size_t l, int tag, unsigned int h) {
   char *str;
   totalsize = sizelstring(l);
   o = luaC_newobj(L, tag, totalsize);
-  ts = gco2ts(o);
+  ts = (TString *) o;
   ts->hash = h;
   ts->extra = 0;
   str = getstr(ts);

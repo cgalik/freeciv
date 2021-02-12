@@ -45,6 +45,22 @@ void script_client_signal_connect(const char *signal_name,
 void script_client_signal_emit(const char *signal_name, ...);
 const char *script_client_signal_list(void);
 
+/* Passing arbitrary Lua parameters (actually table is lua_Object)*/
+int script_client_newtable(void);
+void script_client_table_seti(int t, int i, enum api_types vt, ...);
+void script_client_table_setfield(int t, const char *f,
+                                  enum api_types vt, ...);
+void script_client_obj_done(int obj);
+
+/* Getting signal feedback in tables */
+enum api_types script_client_table_field_type(int t, const char* f);
+enum api_types script_client_table_i_type(int t, int i);
+int script_client_table_len(int t);
+void script_client_table_n_geti(int t, const char *n, int i,
+                                enum api_types apit, ...);
+void script_client_table_n_getfield(int t, const char *n, const char* f, 
+                                    enum api_types apit, ...);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

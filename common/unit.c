@@ -198,6 +198,37 @@ bool unit_has_orders(const struct unit *punit)
   return punit->has_orders;
 }
 
+/*********************************************************************//*****
+  Return TRUE iff this activity would reveal a unit in a transport
+  where it is invisible otherwise.
+****************************************************************************/
+bool unit_activity_is_revealing(enum unit_activity activity)
+{
+  switch (game.server.cargo_visibility) {
+  case VISTR_FORTIF:
+    switch (activity) {
+    case ACTIVITY_FORTIFYING:
+    case ACTIVITY_FORTIFIED:
+      return TRUE;
+    default:
+      return FALSE;
+    }
+  case VISTR_ACT:
+    switch (activity) {
+    case ACTIVITY_IDLE:
+    case ACTIVITY_SENTRY:
+    case ACTIVITY_GOTO:
+    case ACTIVITY_EXPLORE:
+    case ACTIVITY_CONVERT:
+      return FALSE;
+    default:
+      return TRUE;
+    }
+  default:
+    return FALSE;
+  }
+}
+
 /**************************************************************************
   Return TRUE unless it is known to be imposible to disband this unit at
   its current position to get full shields for building a wonder.

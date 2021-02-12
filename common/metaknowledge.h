@@ -16,6 +16,7 @@
 
 /* common */
 #include "requirements.h"
+#include "effects.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,6 +30,7 @@ mke_eval_req(const struct player *pow_player,
              const struct impr_type *target_building,
              const struct tile *target_tile,
              const struct unit *target_unit,
+             const struct unit_type *target_unittype,
              const struct output_type *target_output,
              const struct specialist *target_specialist,
              const struct requirement *req,
@@ -42,11 +44,22 @@ mke_eval_reqs(const struct player *pow_player,
               const struct impr_type *target_building,
               const struct tile *target_tile,
               const struct unit *target_unit,
+              const struct unit_type *target_unittype,
               const struct output_type *target_output,
               const struct specialist *target_specialist,
               const struct requirement_vector *reqs,
               const enum   req_problem_type prob_type);
-
+bool is_effect_val_known(enum effect_type effect_type,
+                         const struct player *pow_player,
+                         const struct player *target_player,
+                         const struct player *other_player,
+                         const struct city *target_city,
+                         const struct impr_type *target_building,
+                         const struct tile *target_tile,
+                         const struct unit *target_unit,
+                         const struct unit_type *target_unittype,
+                         const struct output_type *target_output,
+                         const struct specialist *target_specialist);
 
 bool can_see_techs_of_target(const struct player *pow_player,
                              const struct player *target_player);

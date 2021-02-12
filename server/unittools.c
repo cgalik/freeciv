@@ -94,6 +94,7 @@ struct unit_move_data {
   bv_player can_see_unit;
   bv_player can_see_move;
   struct vision *old_vision;
+  bool f_activity;
 };
 
 #define SPECLIST_TAG unit_move_data
@@ -425,6 +426,8 @@ void player_restore_units(struct player *pplayer)
         carrier = transporter_for_unit(punit);
         if (carrier) {
           unit_transport_load_tp_status(punit, carrier, FALSE);
+          /* Unit may go out of sight now */
+          unit_loaded_hide(punit);
         } else {
           bool alive = true;
 
@@ -474,6 +477,7 @@ void player_restore_units(struct player *pplayer)
                   carrier = transporter_for_unit(punit);
                   if (carrier) {
                     unit_transport_load_tp_status(punit, carrier, FALSE);
+                    unit_loaded_hide(punit);
                   }
                 }
 
@@ -1013,13 +1017,17 @@ void unit_forget_last_activity(struct unit *punit)
 
 /**************************************************************************
   Return TRUE iff activity requires some sort of target to be specified by
-  the client.
+  the client. For mine and irrigate, it is not required to transform
+  but in other cases must be catched by execute_orders()
 **************************************************************************/
 bool unit_activity_needs_target_from_client(enum unit_activity activity)
 {
   switch (activity) {
   case ACTIVITY_PILLAGE:
     /* Can be set server side. */
+  case ACTIVITY_MINE:
+  case ACTIVITY_IRRIGATE:
+    /* May be terrain-transforming */
     return FALSE;
   default:
     return activity_requires_target(activity);
@@ -1178,6 +1186,8 @@ void bounce_unit(struct unit *punit, bool verbose)
   struct tile *punit_tile;
   struct unit_list *pcargo_units;
   int count = 0;
+  int cargo_count;
+  struct unit_bounce_data data;
 
   /* I assume that there are no topologies that have more than
    * (2d + 1)^2 tiles in the "square" of "radius" d. */
@@ -1188,6 +1198,8 @@ void bounce_unit(struct unit *punit, bool verbose)
     return;
   }
 
+  cargo_count = get_transporter_occupancy(punit);
+  unit_bounce_data_fill(&data, punit);
   pplayer = unit_owner(punit);
   punit_tile = unit_tile(punit);
 
@@ -1209,6 +1221,16 @@ void bounce_unit(struct unit *punit, bool verbose)
 
   if (count > 0) {
     struct tile *ptile = tiles[fc_rand(count)];
+    struct unit_bounce_data* cargolist;
+
+    if (cargo_count > 0) {
+      struct unit_bounce_data* pdata;
+
+      pdata = cargolist = fc_malloc(cargo_count * sizeof(*cargolist));
+      unit_cargo_iterate(punit, cargo) {
+        unit_bounce_data_fill(pdata++, cargo);
+      } unit_cargo_iterate_end;
+    }
 
     if (verbose) {
       notify_player(pplayer, ptile, E_UNIT_RELOCATED, ftc_server,
@@ -1216,13 +1238,26 @@ void bounce_unit(struct unit *punit, bool verbose)
                     _("Moved your %s."),
                     unit_link(punit));
     }
+    /* Start with it to make invasions slow and send info once */
+    if (unit_transported(punit)) {
+      unit_transport_unload(punit);
+    }
+    slow_invasions_bounced(punit, punit_tile, ptile);
     unit_move(punit, ptile, 0, NULL);
+    unit_bounce_data_restore(&data);
+    if (cargo_count > 0) {
+      struct unit_bounce_data* pdata = cargolist;
+      while (pdata < &cargolist[cargo_count]) {
+        unit_bounce_data_restore(pdata++);
+      }
+      FC_FREE(cargolist);
+    }
     return;
   }
 
   /* Didn't find a place to bounce the unit, going to disband it.
    * Try to bounce transported units. */
-  if (0 < get_transporter_occupancy(punit)) {
+  if (0 < cargo_count) {
     pcargo_units = unit_transport_cargo(punit);
     unit_list_iterate(pcargo_units, pcargo) {
       bounce_unit(pcargo, verbose);
@@ -1668,7 +1703,11 @@ static void server_remove_unit_full(struct unit *punit, bool transported,
   /* Send to onlookers. */
   players_iterate(aplayer) {
     if (can_player_see_unit_at(aplayer, punit, unit_tile(punit),
-                               transported)) {
+                               transported
+                               && !(game.server.cargo_visibility
+                                    == VISTR_ALL)
+                               && !unit_activity_is_revealing(
+                                    punit->activity))) {
       lsend_packet_unit_remove(aplayer->connections, &packet);
     }
   } players_iterate_end;
@@ -2419,8 +2458,9 @@ void package_short_unit(struct unit *punit,
   }
 
   /* Transported_by information is sent to the client even for units that
-   * aren't fully known.  Note that for non-allied players, any transported
-   * unit can't be seen at all.  For allied players we have to know if
+   * aren't fully known.  Note that for non-allied players, transported
+   * unit visibility depends on game.server.cargo_visibility setting
+   * and sometimes its activity. For allied players we have to know if
    * transporters have room in them so that we can load units properly. */
   if (!unit_transported(punit)) {
     packet->transported = FALSE;
@@ -2483,6 +2523,52 @@ void send_unit_info(struct conn_list *dest, struct unit *punit)
       if (pdata != NULL) {
         BV_SET(pdata->can_see_unit, player_index(pplayer));
       }
+    }
+  } conn_list_iterate_end;
+}
+
+/****************************************************************************
+  send the unit to the players who need the info or informs that the unit
+  went out of sight as loaded into the transport.
+****************************************************************************/
+void send_unit_info_loaded(struct conn_list *dest, struct unit *punit)
+{
+  const struct player *powner;
+  struct packet_unit_info info;
+  struct packet_unit_short_info sinfo;
+  struct unit_move_data *pdata;
+
+  if (dest == NULL) {
+    dest = game.est_connections;
+  }
+  CHECK_UNIT(punit);
+
+  powner = unit_owner(punit);
+  package_unit(punit, &info);
+  package_short_unit(punit, &sinfo, UNIT_INFO_IDENTITY, 0);
+  pdata = punit->server.moving;
+
+  conn_list_iterate(dest, pconn) {
+    struct player *pplayer = conn_get_player(pconn);
+
+    /* Be careful to consider all cases where pplayer is NULL... */
+    if (pplayer == NULL) {
+      if (pconn->observer) {
+        send_packet_unit_info(pconn, &info);
+      }
+    } else if (pplayer == powner) {
+      send_packet_unit_info(pconn, &info);
+      if (pdata != NULL) {
+        BV_SET(pdata->can_see_unit, player_index(pplayer));
+      }
+    } else if (can_player_see_unit(pplayer, punit)) {
+      send_packet_unit_short_info(pconn, &sinfo, FALSE);
+      if (pdata != NULL) {
+        BV_SET(pdata->can_see_unit, player_index(pplayer));
+      }
+    } else if (can_player_see_unit_at(pplayer, punit,
+                                      unit_tile(punit), FALSE)) {
+      unit_goes_out_of_sight(pplayer, punit);
     }
   } conn_list_iterate_end;
 }
@@ -2976,12 +3062,35 @@ void unit_transport_load_send(struct unit *punit, struct unit *ptrans)
     }
   } players_iterate_end;
 
-  send_unit_info(NULL, punit);
+  send_unit_info_loaded(NULL, punit);
   send_unit_info(NULL, ptrans);
+}
+
+/*******************************************************************//*******
+  Sends "out of sight" package to everybody whom needed.
+  Does not update unit info to ones still seeing it (to be done elsewhere).
+****************************************************************************/
+void unit_loaded_hide(struct unit *punit)
+{
+  struct player *pplayer = unit_owner(punit);
+  struct tile *ptile = unit_tile(punit);
+
+  if (game.server.cargo_visibility != VISTR_ALL
+      && !unit_activity_is_revealing(punit->activity)) {
+    conn_list_iterate(game.est_connections, pconn) {
+      struct player *aplayer = conn_get_player(pconn);
+      
+      if (aplayer && !pplayers_allied(pplayer, aplayer)
+          && can_player_see_unit_at(aplayer, punit, ptile, FALSE)) {
+        unit_goes_out_of_sight(aplayer, punit);
+      }
+    } conn_list_iterate_end;
+  }
 }
 
 /****************************************************************************
   Load unit to transport, send transport's loaded status to everyone.
+  Assumes that the cargo's info is sent elsewhere.
 ****************************************************************************/
 static void unit_transport_load_tp_status(struct unit *punit,
                                           struct unit *ptrans,
@@ -3454,6 +3563,7 @@ static struct unit_move_data *unit_move_data(struct unit *punit,
     pdata = fc_malloc(sizeof(*pdata));
     pdata->ref_count = 1;
     pdata->punit = punit;
+    pdata->f_activity = unit_activity_is_revealing(punit->activity);
     punit->server.moving = pdata;
     BV_CLR_ALL(pdata->can_see_unit);
   }
@@ -3650,7 +3760,7 @@ bool unit_move(struct unit *punit, struct tile *pdesttile, int move_cost,
        * above. */
       continue;
     }
-
+  
     players_iterate(oplayer) {
       if ((adj
            && can_player_see_unit_at(oplayer, pmove_data->punit, psrctile,
@@ -3659,11 +3769,14 @@ bool unit_move(struct unit *punit, struct tile *pdesttile, int move_cost,
                                     pmove_data != pdata)) {
         BV_SET(pmove_data->can_see_unit, player_index(oplayer));
         BV_SET(pmove_data->can_see_move, player_index(oplayer));
-      }
-      if (can_player_see_unit_at(oplayer, pmove_data->punit, psrctile,
-                                 pmove_data != pdata)) {
+      } else if (can_player_see_unit_at(oplayer, pmove_data->punit, psrctile,
+                                        pmove_data != pdata
+                                        && !pmove_data->f_activity)) {
         /* The unit was seen with its source tile even if it was
          * teleported. */
+        /* Fortified cargo will not be fortified any more and thus
+         * will not be seen to non-allied players if it was.
+         * It jumps in a boat, and one doesn't see it moving later. */
         BV_SET(pmove_data->can_see_unit, player_index(oplayer));
       }
     } players_iterate_end;
@@ -4143,12 +4256,19 @@ bool execute_orders(struct unit *punit, const bool fresh)
       }
     case ORDER_ACTIVITY:
       activity = order.activity;
+      dst_tile = unit_tile(punit);
       {
         struct extra_type *pextra = (order.target == EXTRA_NONE ?
                                        NULL :
                                        extra_by_number(order.target));
 
-        if (pextra == NULL && activity_requires_target(order.activity)) {
+        if (pextra == NULL && activity_requires_target(order.activity)
+            && !(ACTIVITY_MINE == order.activity
+                 && tile_terrain(dst_tile)
+                    != tile_terrain(dst_tile)->mining_result)
+            && !(ACTIVITY_IRRIGATE == order.activity
+                 && tile_terrain(dst_tile)
+                    != tile_terrain(dst_tile)->irrigation_result)) {
           /* Try to find a target extra before giving up this order or, if
            * serious enough, all orders. */
 
@@ -4192,7 +4312,7 @@ bool execute_orders(struct unit *punit, const bool fresh)
           set_unit_activity_targeted(punit, activity, pextra);
           send_unit_info(NULL, punit);
           break;
-        } else {
+        } else if (pextra) {
           if ((activity == ACTIVITY_BASE
                || activity == ACTIVITY_GEN_ROAD
                || activity == ACTIVITY_IRRIGATE

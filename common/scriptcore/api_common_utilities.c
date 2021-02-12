@@ -70,7 +70,16 @@ void api_utilities_log_base(lua_State *L, int level, const char *message)
   luascript_log(fcl, level, "%s", message);
 }
 
-/**************************************************************************
+/*********************************************************************//***
+  Just returns the direction as number
+**************************************************************************/
+int api_utilities_direction_id(lua_State *L, Direction dir)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+  return (int) dir;
+}
+
+/*********************************************************************//***
   Convert text describing direction into direction
 **************************************************************************/
 const Direction *api_utilities_str2dir(lua_State *L, const char *dir)
@@ -79,6 +88,17 @@ const Direction *api_utilities_str2dir(lua_State *L, const char *dir)
   LUASCRIPT_CHECK_ARG_NIL(L, dir, 2, string, NULL);
 
   return luascript_dir(direction8_by_name(dir, fc_strcasecmp));
+}
+
+/*****************************************************************************
+  Get direction name
+*****************************************************************************/
+const char *api_utilities_dir2str(lua_State *L, Direction dir)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK(L, is_valid_dir(dir), "Direction is invalid", NULL);
+
+  return direction8_name(dir);
 }
 
 /**************************************************************************

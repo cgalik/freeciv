@@ -4238,6 +4238,7 @@ static bool autocreate_command(struct connection *caller, char *arg, bool check)
     sz_strlcpy(pplayer->username, conf_player);
     pplayer->was_created = TRUE; /* must use /remove explicitly to remove */
     pplayer->ai_controlled = FALSE;
+    pplayer->ai = ai_type_by_name("default");
 
     if (strlen(buf) > 0) {
       /* Send a notification. */
@@ -4255,8 +4256,9 @@ static bool autocreate_command(struct connection *caller, char *arg, bool check)
       player_nation_defaults(pplayer, pnation, FALSE);
     }
     if (conf_team[0] != '\0') {
-      char dupa[4096];
-      sprintf(dupa, "\"%s\" \"%s\"", conf_player, conf_team);
+      /* avoid output truncation warning in gcc */
+      char dupa[sizeof(conf_player) + sizeof(conf_team) + 5];
+      snprintf(dupa, sizeof(dupa), "\"%s\" \"%s\"", conf_player, conf_team);
       team_command(caller, dupa, check);
     }
   }

@@ -26,27 +26,82 @@
 #include "api_game_find.h"
 
 /*****************************************************************************
-  Return a player with the given player_id.
+  Return a player with the given id or name
 *****************************************************************************/
-Player *api_find_player(lua_State *L, int player_id)
+Player *api_find_player(lua_State *L, lua_Object plr)
 {
   LUASCRIPT_CHECK_STATE(L, NULL);
 
-  return player_by_number(player_id);
+  if (lua_type(L, plr) == LUA_TNUMBER) {
+    int ch;
+    int n = lua_tointegerx(L, plr, &ch);
+    if (ch) {
+      return player_by_number(n);
+    }
+  } else if (lua_isstring(L, plr)) {
+    return player_by_name(lua_tostring(L, plr));
+  }
+  luascript_arg_error(L, 2, "player id or name required");
+  return NULL;
 }
 
 /*****************************************************************************
-  Return a player city with the given city_id.
+  Return first found city with the given id or name (case-insensitive).
+  If the player is not provided (in find.player format or as object),
+  searches all cities in the world
 *****************************************************************************/
-City *api_find_city(lua_State *L, Player *pplayer, int city_id)
+City *api_find_city(lua_State *L, lua_Object plr, lua_Object cty)
 {
+  const struct player *pplayer = NULL;
+  tolua_Error err;
   LUASCRIPT_CHECK_STATE(L, NULL);
-
-  if (pplayer) {
-    return player_city_by_number(pplayer, city_id);
-  } else {
-    return idex_lookup_city(city_id);
+  switch (lua_type(L, plr)) {
+  case LUA_TUSERDATA:
+    if (tolua_isusertype(L, plr, "Player", 0, &err)) {
+      pplayer = tolua_tousertype(L, plr, NULL);
+    } else {
+      luascript_arg_error(L, 2, "player required");
+      return NULL;
+    }
+    break;
+  case LUA_TNIL:
+    break;
+  case LUA_TNUMBER:
+  case LUA_TSTRING:
+    pplayer = api_find_player(L, plr);
+    if (!pplayer) {/* Some error, was reported by the function */
+      return NULL;
+    }
+    break;
+  default:
+    luascript_arg_error(L, 2, "player object, id or name required");
+    return NULL;
   }
+
+  if (lua_type(L, cty) == LUA_TNUMBER) {
+    int ch;
+    int n = lua_tointegerx(L, cty, &ch);
+    if (ch) {
+      if (pplayer) {
+        return player_city_by_number(pplayer, n);
+      } else {
+        return idex_lookup_city(n);
+      }
+    }
+  } else if (lua_isstring(L, cty)) { /* Try finding by string */
+    const char *name = lua_tostring(L, cty);/* converts stack position */
+    if (pplayer) {
+      return city_list_find_name(pplayer->cities, name);
+    } else {
+      cities_iterate (pcity) {
+        if (!fc_strcasecmp(name, city_name_get(pcity))) {
+          return pcity;
+        }
+      } cities_iterate_end;
+    }
+  }
+  luascript_arg_error(L, 3, "city id or name required");
+  return NULL;
 }
 
 /*****************************************************************************
@@ -260,6 +315,54 @@ Terrain *api_find_terrain_by_name(lua_State *L, const char *name_orig)
   LUASCRIPT_CHECK_ARG_NIL(L, name_orig, 2, string, NULL);
 
   return terrain_by_rule_name(name_orig);
+}
+
+/**********************************************************************//*****
+  Return the action with the given rule action_name
+*****************************************************************************/
+Action *api_find_action_by_name(lua_State *L, const char *action_name)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_ARG_NIL(L, action_name, 2, string, NULL);
+
+  return action_by_number(gen_action_by_name(action_name, fc_strcasecmp));
+}
+
+/**********************************************************************//*****
+  Return the action with the given id
+*****************************************************************************/
+Action *api_find_action_by_id(lua_State *L, int actn_id)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+
+  return action_by_number(actn_id);
+}
+
+/**********************************************************************//*****
+  Return the achievement with the given id
+*****************************************************************************/
+Achievement *api_find_achievement(lua_State *L, int id)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  return achievement_by_number(id);
+}
+
+/**********************************************************************//*****
+  Return the disaster with the given id
+*****************************************************************************/
+Disaster *api_find_disaster(lua_State *L, int id)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  return disaster_by_number(id);
+}
+
+/**********************************************************************//*****
+  Return the direction with the given id
+*****************************************************************************/
+const Direction *api_find_direction (lua_State *L, int id)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  return luascript_dir((enum direction8) id);
 }
 
 /*****************************************************************************

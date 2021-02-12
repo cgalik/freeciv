@@ -55,6 +55,31 @@ enum barbarians_rate {
   BARBS_HORDES
 };
 
+enum bombardment_reveal_mode {
+/* Bombardment reveals all targeted units and the bombarder */
+  BREM_ALL,
+/* Bombardment reveals the strongest defender and the bombarder */
+  BREM_BEST,
+/* Bombardment reveals only the bombarder */
+  BREM_ATTACKER,
+/* Bombardment reveals no units otherwise unseen.
+ * It's supposed that in all previous options the attacker is seen. */
+  BREM_NONE
+};
+#define BREM_LAST BREM_NONE
+
+enum cargo_visibility_mode {
+/* Non-allied units are hidden while transported */
+  VISTR_NONE,
+/* You can see fortified or fortifying foreign unit */
+  VISTR_FORTIF,
+/* A unit can't do most activities in transport without revealing itself */
+  VISTR_ACT,
+/* Transports don't hide units */
+  VISTR_ALL
+};
+#define VISTR_LAST VISTR_ALL
+
 enum autosave_type {
   AS_TURN = 0,
   AS_GAME_OVER,
@@ -130,6 +155,8 @@ struct civ_game {
       int autoupgrade_veteran_loss;
       enum barbarians_rate barbarianrate;
       int base_incite_cost;
+      /* Move the next setting to game_info package if standardized */
+      enum bombardment_reveal_mode bombardment_reveal;
       int civilwarsize;
       int conquercost;
       int contactturns;
@@ -180,6 +207,7 @@ struct civ_game {
       unsigned autosaves; /* FIXME: char would be enough, but current settings.c code wants to
                              write sizeof(unsigned) bytes */
       bool savepalace;
+      enum cargo_visibility_mode cargo_visibility;
       bool homecaughtunits;
       char start_units[MAX_LEN_STARTUNIT];
       bool start_city;
@@ -631,6 +659,8 @@ extern struct civ_game game;
 
 #define GAME_DEFAULT_AUTOATTACK      FALSE
 
+#define GAME_DEFAULT_BOMBARDMENT_REVEAL   BREM_ALL
+
 #ifdef FREECIV_WEB
 #define GAME_DEFAULT_RULESETDIR      "fcweb"
 #else  /* FREECIV_WEB */
@@ -808,6 +838,8 @@ extern struct civ_game game;
 #define RS_DEFAULT_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 0
 #define RS_MIN_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 0
 #define RS_MAX_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 100
+
+#define RS_DEFAULT_BOMBARDMENT_REVEAL            "All"
 
 #define RS_DEFAULT_BASE_BRIBE_COST               750
 #define RS_MIN_BASE_BRIBE_COST                   0

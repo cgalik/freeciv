@@ -43,6 +43,29 @@ struct player_tile {
   short last_updated;
 };
 
+/* unit_move() resets UWT, this structure stores it to put back */
+struct unit_bounce_data {
+  int id;
+  time_t action_timestamp;
+  /* if unit_did_action changes wait list:
+   *  struct unit_wait_list_link *wait; */
+  int action_turn;
+};
+
+/* making bouncing abid to slow_invasions setting */
+/* see tile_move_cost_ptrs() */
+#define slow_invasions_bounced(_punit, _t_from, _t_to)       \
+{                                                            \
+  struct unit_class* _punit##_class = unit_class_get(_punit);\
+  if (game.info.slow_invasions                               \
+      && !unit_transported(_punit)                           \
+      && uclass_has_flag(_punit##_class, UCF_TERRAIN_SPEED)  \
+      && !is_native_tile_to_class(_punit##_class, (_t_from)) \
+      && is_native_tile_to_class(_punit##_class, (_t_to))) { \
+    _punit->moves_left = 0;                                  \
+  }                                                          \
+}
+
 void global_warming(int effect);
 void nuclear_winter(int effect);
 void climate_change(bool warming, int effect);
@@ -138,5 +161,9 @@ void destroy_extra(struct tile *ptile, struct extra_type *pextra);
 
 void give_distorted_map(struct player *pfrom, struct player *pto, int good,
                         int bad, bool reveal_cities);
+
+void unit_bounce_data_fill(struct unit_bounce_data* data,
+                           const struct unit* punit);
+void unit_bounce_data_restore(const struct unit_bounce_data* data);
 
 #endif  /* FC__MAPHAND_H */

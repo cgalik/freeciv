@@ -251,7 +251,7 @@ const char *research_advance_rule_name(const struct research *presearch,
     }
 
     fc_assert(name != NULL);
-
+    fc_assert(name != buffer);
     return name;
   }
 
@@ -652,6 +652,60 @@ bool research_goal_tech_req(const struct research *presearch,
   }
 }
 
+/**********************************************************************//**
+  If leakage style is 2 or 3, it counts players that pplayer does not have
+  embassy to and returns how much cheaper the tech would be if they all
+  know it rather than if they all don't know
+**************************************************************************/
+double min_leakage_ratio(const struct player *pplayer,
+                         Tech_type_id tech)
+{
+  const struct research *presearch = research_get(pplayer);
+  fc_assert(presearch);
+
+  switch (game.info.tech_leakage) {
+  case TECH_LEAKAGE_NONE:
+  case TECH_LEAKAGE_EMBASSIES:
+    return 1.0;
+  case TECH_LEAKAGE_PLAYERS:
+  case TECH_LEAKAGE_NO_BARBS:
+    {
+      int players = 0, players_with_tech = 0, players_obscure = 0;
+
+      players_iterate_alive(aplayer) {
+        if (TECH_LEAKAGE_NO_BARBS == game.info.tech_leakage
+            && is_barbarian(aplayer)) {
+          continue;
+        }
+        players++;
+        if (player_has_embassy(pplayer, aplayer)) {
+          if (A_FUTURE == tech
+              ? (research_get(aplayer)->future_tech
+                 > presearch->future_tech)
+              : TECH_KNOWN == research_invention_state(presearch, tech)) {
+            players_with_tech++;
+          }
+        } else {
+          players_obscure++;
+        }
+      } players_iterate_alive_end;
+
+      fc_assert_ret_val(0 < players, 1.0);
+      fc_assert(players >= players_with_tech + players_obscure);
+      if (0 == players_obscure) {
+        return 1.0;
+      }
+      return (double) (players - players_with_tech - players_obscure)
+                      / (players - players_with_tech);
+    }
+    break;
+  default:
+    log_error("Invalid tech_leakage %d", game.info.tech_leakage);
+  }
+
+  return 1.0;
+}
+
 /****************************************************************************
   Function to determine cost for technology.  The equation is determined
   from game.info.tech_cost_style and game.info.tech_leakage.
@@ -777,7 +831,10 @@ int research_total_bulbs_required(const struct research *presearch,
         }
 
         research_players_iterate(presearch, pplayer) {
-          if (player_has_embassy(pplayer, aplayer)) {
+          /* Embassies via allies don't help here */
+          if (player_has_real_embassy(pplayer, aplayer)
+              || (!is_barbarian(aplayer)
+                  && get_player_bonus(pplayer, EFT_HAVE_EMBASSIES) > 0)) {
             players_with_tech_and_embassy++;
             break;
           }

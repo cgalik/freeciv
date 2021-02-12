@@ -222,8 +222,22 @@ bool player_has_real_embassy(const struct player *pplayer,
 bool player_has_embassy_from_effect(const struct player *pplayer,
                                     const struct player *pplayer2)
 {
-  return (get_player_bonus(pplayer, EFT_HAVE_EMBASSIES) > 0
-          && !is_barbarian(pplayer2));
+  if (is_barbarian(pplayer2)) {
+    return FALSE;
+  }
+  if (get_player_bonus(pplayer, EFT_HAVE_EMBASSIES) > 0) {
+    return TRUE;
+  }
+  
+  player_list_iterate(team_members(pplayer->team), teammate) {
+    if (teammate != pplayer && teammate->is_alive
+        && (get_player_bonus(teammate, EFT_HAVE_EMBASSIES) > 0
+            || player_has_real_embassy(teammate, pplayer2))) {
+      return TRUE;
+    }
+  } player_list_iterate_end;
+
+  return FALSE;
 }
 
 /****************************************************************************
@@ -937,8 +951,8 @@ bool can_player_see_hypotetic_units_at(const struct player *pplayer,
   (a) can see the tile AND
   (b) can see the unit at the tile (i.e. unit not invisible at this tile) AND
   (c) the unit is outside a city OR in an allied city AND
-  (d) the unit isn't in a transporter, or we are allied AND
-  (e) the unit isn't in a transporter, or we can see the transporter
+  (d) the unit isn't lurking in a transporter, or we are allied AND
+  (e) the unit isn't lurking in a transporter, or we can see the transporter
 ****************************************************************************/
 bool can_player_see_unit_at(const struct player *pplayer,
                             const struct unit *punit,
@@ -979,6 +993,8 @@ bool can_player_see_unit_at(const struct player *pplayer,
 
 /****************************************************************************
   Checks if a unit can be seen by pplayer at its current location.
+  With certain setting, fortifying or fortified units are not considered
+  transported for the vision purposes, or even more of them.
 
   See can_player_see_unit_at.
 ****************************************************************************/
@@ -986,7 +1002,11 @@ bool can_player_see_unit(const struct player *pplayer,
 			 const struct unit *punit)
 {
   return can_player_see_unit_at(pplayer, punit, unit_tile(punit),
-                                unit_transported(punit));
+                                unit_transported(punit)
+                                && !(game.server.cargo_visibility
+                                     == VISTR_ALL)
+                                && !unit_activity_is_revealing(
+                                    punit->activity));
 }
 
 /****************************************************************************

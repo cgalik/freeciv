@@ -26,6 +26,10 @@ struct lua_State;
 int api_effects_world_bonus(lua_State *L, const char *effect_type);
 int api_effects_player_bonus(lua_State *L, Player *pplayer,
                              const char *effect_type);
+int api_effects_player_output_bonus(lua_State *L, Player *pplayer, int oty,
+                                    const char *effect_type);
+int api_effects_player_ostr_bonus(lua_State *L, Player *pplayer,
+                                  const char* otn, const char *effect_type);
 int api_effects_city_bonus(lua_State *L, City *pcity,
                            const char *effect_type);
 
