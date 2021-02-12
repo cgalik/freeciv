@@ -251,7 +251,7 @@ const char *research_advance_rule_name(const struct research *presearch,
     }
 
     fc_assert(name != NULL);
-    fc_assert(name != buffer);
+
     return name;
   }
 

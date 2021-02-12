@@ -947,6 +947,8 @@ const char *api_methods_research_name_translation(lua_State *L, Player *pplayer)
   LUASCRIPT_CHECK_SELF(L, pplayer, NULL);
 
   (void) research_pretty_name(research_get(pplayer), buf, ARRAY_SIZE(buf));
+
+  return buf;
 }
 
 /**********************************************************************//*****
@@ -955,6 +957,7 @@ const char *api_methods_research_name_translation(lua_State *L, Player *pplayer)
 Tech_Type
   *api_methods_player_researching(lua_State *L, Player *self, int *bulbs)
 {
+  struct research *r;
   LUASCRIPT_CHECK_STATE(L, FALSE);
   LUASCRIPT_CHECK_SELF(L, self, FALSE);
 
